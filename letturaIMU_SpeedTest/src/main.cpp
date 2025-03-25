@@ -14,8 +14,8 @@
 
    #define INT_1 LSM6DSOX_INT1_PIN
    #define LED_PIN LED_BUILTIN
-   #define WTM_LV 250  //numero di campioni (Acc+Gyr) che si metterà in un pacchetto -> 5pps
-   #define SR 1667.0f //frequenza acc, gyr
+   #define WTM_LV 125*3  //numero di campioni (Timestamp+Gyr+Acc) che si metterà in un pacchetto -> 5pps
+   #define SR 833.0f //frequenza acc, gyr
    #define FIFO_SIZE 512 // Dimensione massima della FIFO
    
    LSM6DSOXSensor lsm6dsoxSensor = LSM6DSOXSensor(&Wire, LSM6DSOX_I2C_ADD_L);
