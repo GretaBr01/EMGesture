@@ -2,89 +2,112 @@ import socket
 import time
 import csv
 import os
-import argparse
 
-HOST = "192.168.144.74"
+def get_timestamp():
+    return time.time_ns()
+
+def log_message(file_log, message):
+    timestamp = get_timestamp()
+    file_log.write(f"{timestamp} ns - {message}\n")
+    file_log.flush()
+
+TIMEOUT = 30
+
+IP = "192.168.5.1"
 PORT = 6789
-BUFFER_SIZE = 1024
-DURATION = 10
-TIMEOUT = 1.0
 
-# Parsing degli argomenti da riga di comando
-parser = argparse.ArgumentParser(description="Script per acquisizione dati con timestamp sincronizzati.")
-parser.add_argument("pps", type=int, help="Numero di pacchetti al secondo")
-args = parser.parse_args()
-pps = args.pps  # Numero di pacchetti al secondo passato dall'utente
+TEMPO = 21600 # tempo esecuzione in s = 6 ore
+Bps = 18000  # byte inviati al secondo
+TOT_BYTE = TEMPO*Bps
+PACKETS_PER_SECOND = [5]
+BUFFER_SIZES = [Bps // pps for pps in PACKETS_PER_SECOND]
 
+LOG_FILE = "logTest_py.txt"
+DATA_FILE = "dataset.txt"
 
-FOLDER_NAME = "WiFiTestResult"
-if not os.path.exists(FOLDER_NAME):
-    os.makedirs(FOLDER_NAME)
+folder_path = "Test_python"
+os.makedirs(folder_path, exist_ok=True)
 
-print(pps)
 file_index = 1
-while os.path.exists(f"{FOLDER_NAME}/timestamp_data_{pps}pps_{file_index}.csv"):
+while os.path.exists(f"./{folder_path}/test_wifi_{file_index}.csv"):
     file_index += 1
 
-FILENAME = f"{FOLDER_NAME}/timestamp_data_{pps}pps_{file_index}.csv"
+CSV_FILE = f"./{folder_path}/test_wifi_{file_index}.csv"
 
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.bind((HOST, PORT))
-server_socket.listen(1)
+# Apertura file log
+with open(LOG_FILE, mode="a") as file_log, open(DATA_FILE, mode="a") as file_data:
+    # Avvia il server TCP
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 10*1024*1024) #dimensione in byte, impostata a 5kB
 
-print(f"Server in ascolto su {HOST}:{PORT}...")
+        server.bind((IP, PORT))
+        server.listen(1)
+        print(f"Server in ascolto su {IP}:{PORT}")
+        print(f"\n{PACKETS_PER_SECOND}")
+        log_message(file_log, f"Server in ascolto su {IP}:{PORT}")
 
-conn, addr = server_socket.accept()
-print(f"Connesso da {addr}")
-conn.settimeout(TIMEOUT)
+        # Apre il file CSV per la scrittura
+        with open(CSV_FILE, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["packet_number", "start_timestamp", "end_timestamp", "packet_size_byte", "packets_per_second"])
 
-# Inizializza variabili di test
-start_time = time.time()
-total_bytes_received = 0
-packets_received = 0
-packet_size = 2400  # Modifica a 1200 o 480 se necessario
-end_time = 0
-
-# Apri il file CSV per salvare i dati
-with open(FILENAME, mode="w", newline="") as file:
-    writer = csv.writer(file)
-    writer.writerow(["Timestamp", "BytesReceived", "PacketsReceived", "SpeedKbps"])  # Intestazione CSV
-    
-    try:
-        while True:
-            try:
-                data = conn.recv(packet_size)
-                if not data:
-                    print("Connessione persa, in attesa di nuova connessione...")
-                    break
-
-                total_bytes_received += len(data)
-                packets_received += 1
-                elapsed_time = time.time() - start_time
-                speed_kbps = (total_bytes_received * 8) / (elapsed_time * 1000)  # Calcola velocità in Kbps
+            for i, pps in enumerate(PACKETS_PER_SECOND):
+                buffer_size = BUFFER_SIZES[i]
+                print(f"\n{get_timestamp()} ns - In attesa di connessione (PACKETS_PER_SECOND = {pps}, BUFFER_SIZE = {buffer_size})")
                 
-                # Stampa aggiornamento in tempo reale
-                print(f"{packets_received} - Ricevuti {len(data)} byte - {speed_kbps:.2f} Kbps")
+                log_message(file_log, f"In attesa di connessione (PACKETS_PER_SECOND = {pps}, BUFFER_SIZE = {buffer_size})")
 
-                # Salva dati su CSV
-                writer.writerow([elapsed_time, len(data), packets_received, speed_kbps])
-            except socket.timeout:
-                end_time = time.time()
-                pass
+                conn, addr = server.accept()
+                timeout_counter = 0
+                # Connessione attiva
+                with conn:
+                    conn.settimeout(TIMEOUT) 
+                    print(f"\n{get_timestamp()} ns - Connessione ricevuta da {addr}")
+                    
+                    log_message(file_log, f"Connessione ricevuta da {addr}")
 
-    except KeyboardInterrupt:
-        print("\nTest interrotto manualmente.")
-    finally:
-        # Chiusura e stampa risultati finali
-        duration = end_time - start_time - TIMEOUT
-        avg_speed_kbps = (total_bytes_received * 8) / (duration * 1000)
-        
-        print("\n**Test Concluso**")
-        print(f"Durata: {duration:.2f} s")
-        print(f"Pacchetti ricevuti: {packets_received}")
-        print(f"Totale dati ricevuti: {total_bytes_received} byte")
-        print(f"Velocità media: {avg_speed_kbps:.2f} Kbps")
-        print(f"Dati salvati in {FILENAME}")
+                    packet_count = 0
+                    data_ricevuti = 0
+                    
+                    try:
+                        while True:
+                            data = bytearray()
+                            start_time = get_timestamp()
+                            while len(data) < 3600:
+                                chunk = conn.recv(min(buffer_size, 3600 - len(data)))
+                                if not chunk:
+                                  break
+                                data.extend(chunk)
+                            end_time = get_timestamp()
 
-        conn.close()
-        server_socket.close()
+                            file_data.write(data.hex() + '\n')
+                            file_data.flush()
+                            data_ricevuti +=len(data)
+
+                            log_message(file_log, f"Ricevuto pacchetto {packet_count}, size: {len(data)}")
+
+                            if not data:
+                                log_message(file_log, f"Connessione chiusa, nessun dato ricevuto da Arduino (PACKETS_PER_SECOND = {pps}, pacchetti ricevuti {packet_count})")
+                                break
+
+                            packet_count += 1
+                            writer.writerow([packet_count, start_time, end_time, len(data), pps])
+                            file.flush()
+
+                            if data_ricevuti >= TOT_BYTE:
+                                log_message(file_log, f"FINE RICEZIONE: Connessione chiusa (PACKETS_PER_SECOND = {pps}, pacchetti ricevuti {packet_count})")                                
+                                break
+                                
+                    except socket.timeout:    
+                        log_message(file_log, f"Timeout: nessun pacchetto ricevuto in {TIMEOUT} secondi")        
+                        conn.close()
+                    except KeyboardInterrupt:
+                        log_message(file_log, f"Interrotto manualmente")
+                    except Exception as e:
+                        log_message(file_log, f"Errore: {str(e)}")
+                    finally:
+                        if not conn._closed:                            
+                            print(f"\n{get_timestamp()} ns - Test completato (PACKETS_PER_SECOND = {pps})")
+                            log_message(file_log, f"Test completato (PACKETS_PER_SECOND = {pps})")
+                            conn.close()
+server.close()
