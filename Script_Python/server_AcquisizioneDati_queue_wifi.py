@@ -3,9 +3,10 @@ import struct
 import csv
 import os
 from datetime import datetime
+import time
 
 # Config
-IP = "192.168.40.74"
+IP = "192.168.5.1"
 PORT = 6789
 
 IMU_STRUCT_FORMAT = "<I6s6s"       # timestamp (4) + gyr (6) + acc (6)
@@ -19,10 +20,6 @@ IMU_SAMPLE_SIZE = 4 + 6 + 6
 ADC_SAMPLE_SIZE = 4 + 6
 
 PACKET_SIZE = (IMU_SAMPLE_SIZE * N_IMU_SAMPLE_PACKET) + (ADC_SAMPLE_SIZE * N_ADC_SAMPLE_PACKET)
-
-#SIZE_IMU_SAMPLE = 16  # 4 (timestamp) + 6 (gyr) + 6 (acc)
-#SIZE_ADC_SAMPLE = 12  # 4 (timestamp) + 4x2 bytes
-#PACKET_SIZE = N_IMU_SAMPLE_PACKET * SIZE_IMU_SAMPLE + N_ADC_SAMPLE_PACKET * SIZE_ADC_SAMPLE
 
 # Cartella di output
 os.makedirs("dati_csv", exist_ok=True)
@@ -38,7 +35,6 @@ adc_writer.writerow(["timestamp", "adc0", "adc1", "adc2", "adc3"])
 
 def decode_imu_sample(data):
     timestamp_bytes, gyr_bytes, acc_bytes = struct.unpack(IMU_STRUCT_FORMAT, data)
-    #timestamp = int.from_bytes(timestamp_bytes, byteorder="little")
     gyr = struct.unpack("<hhh", gyr_bytes)
     acc = struct.unpack("<hhh", acc_bytes)
     return (timestamp_bytes, *gyr, *acc)
@@ -51,8 +47,6 @@ def decode_adc_sample(data):
     adc1 = ((b[1] >> 4) & 0x0F) | (b[2] << 4)
     adc2 = b[3] | ((b[4] & 0x0F) << 8)
     adc3 = ((b[4] >> 4) & 0x0F) | (b[5] << 4)
-    #print("\n")
-    #   print(data)
     return (timestamp, adc0, adc1, adc2, adc3)
 
 
@@ -88,7 +82,7 @@ def start_server():
                     adc_data = decode_adc_sample(packet[offset:offset + ADC_SAMPLE_SIZE])
                     adc_writer.writerow(adc_data)
 
-                print("Pacchetto ricevuto e salvato")
+                print(time.time(),": Pacchetto ricevuto e salvato")
 
         except KeyboardInterrupt:
             print("Interrotto dall'utente")
