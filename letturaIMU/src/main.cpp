@@ -71,15 +71,15 @@
     }
   
     // Set accelerometer scale at +- 2G. Available values are +- 2, 4, 8, 16 G
-    lsm6dsoxSensor.Set_X_FS(2);
+    lsm6dsoxSensor.Set_X_FS(4);
   
     // Set gyroscope scale at +- 125 degres per second. Available values are +- 125, 250, 500, 1000, 2000 dps
-    lsm6dsoxSensor.Set_G_FS(125);
+    lsm6dsoxSensor.Set_G_FS(2000);
   
   
     // Set Accelerometer sample rate. Available values are +- 12.0, 26.0, 52.0, 104.0, 208.0, 416.0, 833.0, 1667.0, 3333.0, 6667.0 Hz
     lsm6dsoxSensor.Set_X_ODR(1667.0f);
-  
+    
   
     // Set Gyroscope sample rate. Available values are +- 12.0, 26.0, 52.0, 104.0, 208.0, 416.0, 833.0, 1667.0, 3333.0, 6667.0 Hz
     lsm6dsoxSensor.Set_G_ODR(1667.0f);
