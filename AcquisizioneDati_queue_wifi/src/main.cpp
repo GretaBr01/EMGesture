@@ -70,11 +70,6 @@ adc_sample_packet vector_adc[N_SAMPLES_ADC];
 volatile bool sample_imu_ready[3] = {false, false, false};
 volatile uint16_t n_sample_fifo=0;
 
-/* NTP - sincronizzazione clock */
-//WiFiUDP udp;
-//const int timeZone = 1;  // Fuso orario (1 per CET, 0 per UTC, ecc.)
-//NTPClient timeClient(udp, server_ip, 3600 * timeZone, 60000);
-
 /* WiFi */
 // const char* ssid = "AndroidAP_3318_12";//"RaspberryAP";
 // const char* password = "a9e1c9899c3a";//"RaspberryPi3b";
@@ -90,8 +85,6 @@ int indice_adc=0;
 
 int count_imu_data=0;
 int count_adc_data=0;
-
-volatile bool stop_invio=false;
 
 
 void core1_setup();
@@ -150,12 +143,12 @@ void setup() {
   queue_init(&imu_queue, sizeof(imu_sample), N_SAMPLE_IMU);
   queue_init(&adc_queue, sizeof(adc_sample), N_SAMPLES_ADC);
   
-  //multicore_reset_core1();
   multicore_launch_core1(core1_main);
 }
 
 unsigned long Time_pkt;
-const unsigned long TIMEOUT_MS = 2000;  // massimo tempo per tentare l'invio
+const unsigned long TIMEOUT_MS = 2000;  // massimo tempo timout invio pacchetto
+uint32_t timeout_count=0;
 
 void loop(){
   imu_sample imu_data;
@@ -167,7 +160,6 @@ void loop(){
       vector_imu[indice_imu]=imu_data;
       indice_imu = (indice_imu + 1) % N_SAMPLE_IMU;
       count_imu_data = min(count_imu_data + 1, N_SAMPLE_IMU);
-      //count_imu_data++;
     }
   }
   
@@ -186,7 +178,6 @@ void loop(){
       vector_adc[indice_adc]=adc_data_p;
       indice_adc = (indice_adc + 1) % N_SAMPLES_ADC;
       count_adc_data = min(count_adc_data + 1, N_SAMPLES_ADC);
-      //count_adc_data++;
     }
   }
 
@@ -248,8 +239,6 @@ void loop(){
       if(client.connected()){
         byte_inviati = client.write(buffer, PACKET_SIZE);
         Serial.printf("%d, byte inviati %d\n", pacchetti_inviati, byte_inviati); 
-        //Serial.printf("queue_imu %d, vect_imu %d, FIFO_IMU = %d\n", queue_get_level(&imu_queue), count_imu_data,  n_sample_fifo);
-        //Serial.printf("queue_adc %d, vect_adc %d\n\n", queue_get_level(&adc_queue), count_adc_data);
       }else{
         client.stop();
         Serial.printf("client non connesso\n");
@@ -258,46 +247,37 @@ void loop(){
     }
     pacchetti_inviati++;
     Time_pkt=millis();
-    //Serial.printf("FIFO_IMU = %d, queue %d, vect %d\n", n_sample_fifo, queue_get_level(&imu_queue), count_imu_data);
-    //Serial.printf("queue adc %d, vect adc %d\n", queue_get_level(&adc_queue), count_adc_data);
-    //delay(3);
 
     count_adc_data=max(count_adc_data-N_ADC_SAMPLE_PACKET,0);
     count_imu_data=max(count_imu_data-N_IMU_SAMPLE_PACKET,0);
   }
-  // else{
-  //   if (count_imu_data==0 && stop_invio){ 
-  //     Serial.println("------------------------------");    
-  //     Serial.printf("queue adc %d, vect adc %d\n", queue_get_level(&adc_queue), count_adc_data);
-  //     Serial.printf("queue imu %d, vect imu %d\n", queue_get_level(&imu_queue), count_imu_data);
-  //   }
-  // }
 
-  //Serial.printf("FIFO_IMU = %d, queue %d, vect %d\n", n_sample_fifo, queue_get_level(&imu_queue), count_imu_data);
-  //Serial.printf("queue adc %d, vect adc %d\n", queue_get_level(&adc_queue), count_adc_data);
- 
   if (pacchetti_inviati>100000){
     Serial.printf("Stop per test, inviati %d pacchetti", pacchetti_inviati);
     while(true);
   }
 
   if(millis()-Time_pkt > TIMEOUT_MS){
-    stop_invio = true;
+    timeout_count++;
     Serial.println("INVIO PACCHETTI FERMO");
     if(!client.connected()){
-      client.availableForWrite();
       client.stop();
       Serial.printf("client non connesso\n");
       client.connect(server_ip, port);
     } else{
       client.stop();
-      Serial.printf("client connesso, chiudo e riapro connessione\n");
-      //delay(500);
+      Serial.printf("client connesso, chiudo e riapro connessione nel caso errore server\n");
+      delay(500);
       client.connect(server_ip, port);
     }
+    if(timeout_count>2){
+      multicore_reset_core1();
+      delay(100);
+      multicore_launch_core1(core1_main);
+    }
     Time_pkt=millis();
-    Serial.printf("FIFO_IMU = %d, queue %d, vect %d\n", n_sample_fifo, queue_get_level(&imu_queue), count_imu_data);
-    Serial.printf("queue adc %d, vect adc %d\n\n", queue_get_level(&adc_queue), count_adc_data);
+    Serial.printf("FIFO_IMU = %d, queue_imu %d, vect_imu %d\n", n_sample_fifo, queue_get_level(&imu_queue), count_imu_data);
+    Serial.printf("queue_adc %d, vect_adc %d\n\n", queue_get_level(&adc_queue), count_adc_data);
   }
   
 }
@@ -313,18 +293,17 @@ void loop(){
  *******************************************************************/
 
 /* interrupt ADC */
-static adc_sample sample; 
-
+static adc_sample sample_adc; 
 void adc_interrupt_handler() { 
   if (current_channel == 0) {
-    sample={0};
-    sample.timestamp = micros();  // Timestamp solo al primo campione
+    memset(&sample_adc, 0, sizeof(sample_adc));
+    sample_adc.timestamp = micros();  // Timestamp solo al primo campione
   }
-  sample.adc[current_channel] = adc_fifo_get();
+  sample_adc.adc[current_channel] = adc_fifo_get();
 
-  if (current_channel >= N_ADC_CHANNELS_ENABLE-1) {  // Se tutti i canali sono stati letti 
+  if (current_channel >= N_ADC_CHANNELS_ENABLE-1) {  // tutti i canali sono stati letti 
     if (!queue_is_full(&adc_queue)){
-      queue_add_blocking(&adc_queue, &sample);
+      queue_add_blocking(&adc_queue, &sample_adc);
     }
   }
 
@@ -340,7 +319,7 @@ void core1_setup() {
 
   /* IMU */
   Wire.begin();  
-  Wire.setClock(100000); //400000 imu crash
+  Wire.setClock(100000);
 
   do {
     lsm6dsoxSensor.begin();
@@ -370,8 +349,6 @@ void core1_setup() {
 
   lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_BYPASS_MODE); // Svuota la FIFO prima di iniziare
 
-  lsm6dsoxSensor.Set_FIFO_Watermark_Level(3);  //soglia cambio stato della FIFO
-
   lsm6dsoxSensor.Set_Timestamp_Status(1);
   lsm6dsoxSensor.Set_FIFO_Timestamp_Decimation(1);
 
@@ -400,96 +377,76 @@ const uint32_t imu_timeout_ms = 700;  // timeout per il riavvio
 
 
 void core1_loop() {
-  static uint32_t last_check_time = 0;
 
   uint16_t numSample=0;
   lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
   n_sample_fifo=numSample;
 
-  if (numSample > 0) {
+  if (numSample > 3) {
 
-    imu_sample sample;
+    imu_sample sample_imu;
     bool sample_in_queue=false;
     uint8_t fifo_data[7];
 
-    // while(numSample > 0 &&  numSample < 331 && !sample_in_queue){ //provare a cambiare con un for per prendere i 3 campioni consecutivi (controllare che numSample < 501)
-    //   lsm6dsoxSensor.Get_FIFO_Sample(fifo_data, 1);
-
-    //   uint16_t id_sample = fifo_data[0] >> 3;
-    //   if(id_sample == 4){
-    //     memcpy(sample.timestamp, &fifo_data[1], 4);
-    //     sample_imu_ready[0]=true;
-    //   }else if (id_sample == 1){  // gyro
-    //     memcpy(sample.gyr, &fifo_data[1], 6);
-    //     sample_imu_ready[1]=true;
-    //   }
-    //   else if (id_sample == 2){ // acc
-    //     memcpy(sample.acc, &fifo_data[1], 6);
-    //     sample_imu_ready[2]=true;
-    //   }
-
-    for(int ns=0; ns<3 &&  numSample < 333; ns++){
+    for(int ns=0; ns<3 &&  numSample>0; ns++){
       lsm6dsoxSensor.Get_FIFO_Sample(fifo_data, 1);
 
       uint16_t id_sample = fifo_data[0] >> 3;
       if(id_sample == 4){
-        memcpy(sample.timestamp, &fifo_data[1], 4);
+        memcpy(sample_imu.timestamp, &fifo_data[1], 4);
         sample_imu_ready[0]=true;
       }else if (id_sample == 1){  // gyro
-        memcpy(sample.gyr, &fifo_data[1], 6);
+        memcpy(sample_imu.gyr, &fifo_data[1], 6);
         sample_imu_ready[1]=true;
       }
       else if (id_sample == 2){ // acc
-        memcpy(sample.acc, &fifo_data[1], 6);
+        memcpy(sample_imu.acc, &fifo_data[1], 6);
         sample_imu_ready[2]=true;
       }
 
+      lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
+      n_sample_fifo=numSample;
+    }
 
-      if (sample_imu_ready[0] && sample_imu_ready[1] && sample_imu_ready[2]) {
-        if (!queue_is_full(&imu_queue)){
-          queue_add_blocking(&imu_queue, &sample);  // Inserisci il sample completo nella coda  
-        }
-        //sample_in_queue=true;      
-        sample_imu_ready[0]=false;
-        sample_imu_ready[1]=false;
-        sample_imu_ready[2]=false;
-        sample={0};
-        imu_last_sample_time = millis(); // aggiorna ultimo tempo valido
-
-        //Serial.println("************* agg Sample IMU ************");
-      }
-
-      //lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
+    
+    if (sample_imu_ready[0] && sample_imu_ready[1] && sample_imu_ready[2]) {
+      if (!queue_is_full(&imu_queue)){
+        queue_add_blocking(&imu_queue, &sample_imu);  // put sample completo nella coda  
+      }   
+      sample_imu_ready[0]=false;
+      sample_imu_ready[1]=false;
+      sample_imu_ready[2]=false;
+      memset(&sample_imu, 0, sizeof(sample_imu));
+      imu_last_sample_time = millis(); // aggiorna ultimo tempo valido
+    }else{
+      /* Se non ci sono i tre campioni in ordine resetto la FIFO */
+      lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_BYPASS_MODE);
+      delay(1);
+      lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE);
     }
   }
 
+  /* Se non riceve nuovi campioni resetto lsm6dsoxSensor (Acc, Gyr) */
   if (millis() - imu_last_sample_time > imu_timeout_ms) {
     Serial.println("\n ----------------- IMU RESET ----------------");
     adc_run(false);
     digitalWrite(LED_PIN, HIGH);
     
-    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_BYPASS_MODE);
     lsm6dsoxSensor.Disable_G();
     lsm6dsoxSensor.Disable_X();
-    
-    lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
-    while(numSample>0){
-       Serial.println(" ----------------- svuota fifo ---------------\n");
-       imu_sample sample;
-       uint8_t fifo_data[7];
-       lsm6dsoxSensor.Get_FIFO_Sample(fifo_data, 1);
-       lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
-    }
-    delay(2);
+    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_BYPASS_MODE);
 
-    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE);
+    delay(3);
+
     lsm6dsoxSensor.Enable_G();
     lsm6dsoxSensor.Enable_X(); 
-    imu_last_sample_time = millis();
+    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE);
     adc_run(true);
-    stop_invio = false;
+
+    lsm6dsoxSensor.Get_FIFO_Num_Samples(&numSample);
+    n_sample_fifo=numSample;
+    imu_last_sample_time = millis();
 
     digitalWrite(LED_PIN, LOW);
-
   }
 }
