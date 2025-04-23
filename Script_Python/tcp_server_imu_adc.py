@@ -62,8 +62,8 @@ log_file = open(f"datiServerTCP/logfile/log_{t}.log", "w")
 
 imu_writer = csv.writer(imu_file)
 adc_writer = csv.writer(adc_file)
-imu_writer.writerow(["timestamp_device", "gyr_x", "gyr_y", "gyr_z", "acc_x", "acc_y", "acc_z", "raspberry_time_ns"])
-adc_writer.writerow(["timestamp_device", "adc0", "adc1", "adc2", "adc3", "raspberry_time_ns"])
+imu_writer.writerow(["timestamp", "gyr_x", "gyr_y", "gyr_z", "acc_x", "acc_y", "acc_z", "pkt_time_ns"])
+adc_writer.writerow(["timestamp", "adc0", "adc1", "adc2", "adc3", "pkt_time_ns"])
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
     def handle(self):
