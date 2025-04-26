@@ -11,13 +11,15 @@
 #define LED_PIN LED_BUILTIN
 static int status = WL_IDLE_STATUS;
 
+#define QUEUE_THRESHOLD_PCT 90
+
 /* ADC */
 #define MASK_12bit 0x0FFF
 #define N_ADC_CHANNELS_ENABLE 4
 #define N_SAMPLES_ADC_QUEUE 3000
 #define N_SAMPLES_ADC_VECT N_SAMPLES_ADC_QUEUE
 #define N_SAMPLES_ADC_PACKET 58
-#define THRESHOLD_ADC_QUEUE (N_SAMPLES_ADC_QUEUE - 25*N_SAMPLES_ADC_QUEUE/100)
+#define THRESHOLD_ADC_QUEUE (N_SAMPLES_ADC_QUEUE * QUEUE_THRESHOLD_PCT /100)
 static uint8_t current_channel = 0;
 
 /* IMU */
@@ -25,7 +27,7 @@ static uint8_t current_channel = 0;
 #define N_SAMPLES_IMU_QUEUE 624
 #define N_SAMPLES_IMU_VECT N_SAMPLES_IMU_QUEUE
 #define N_SAMPLES_IMU_PACKET 12
-#define THRESHOLD_IMU_QUEUE (N_SAMPLES_IMU_QUEUE - 25*N_SAMPLES_IMU_QUEUE/100)
+#define THRESHOLD_IMU_QUEUE (N_SAMPLES_IMU_QUEUE * QUEUE_THRESHOLD_PCT /100)
 static LSM6DSOXSensor lsm6dsoxSensor = LSM6DSOXSensor(&Wire, LSM6DSOX_I2C_ADD_L);
 
 #define IMU_FIFO_READ_PACKETS  3
@@ -155,37 +157,59 @@ void loop(){
   if (level_queue > imu_queue_max_level) {
     imu_queue_max_level = level_queue;
   }
-  while (level_queue > 0 && count_imu_data < N_SAMPLES_IMU_VECT){
+  while (level_queue > 0) {
+    if (count_imu_data >= N_SAMPLES_IMU_VECT && level_queue < THRESHOLD_IMU_QUEUE) {
+        break;
+    }
+
     imu_sample imu_data;
     queue_remove_blocking(&imu_queue, &imu_data);
+
     vector_imu[indice_imu] = imu_data;
     indice_imu = (indice_imu + 1) % N_SAMPLES_IMU_VECT;
-    count_imu_data = min(count_imu_data + 1, N_SAMPLES_IMU_VECT);
+
+    if (count_imu_data < N_SAMPLES_IMU_VECT) {
+        count_imu_data++;
+    }
     level_queue--;
-  }
+}
   
   /* get sample ADC queue  - timestamp, adc0, adc1, adc2, adc3 */
   level_queue = queue_get_level(&adc_queue);
   if (level_queue > adc_queue_max_level) {
     adc_queue_max_level = level_queue;
   }
-  while (level_queue > 0 && count_adc_data < N_SAMPLES_ADC_VECT){
+  while (level_queue > 0) {
+    if (count_imu_data >= N_SAMPLES_IMU_VECT && level_queue < THRESHOLD_ADC_QUEUE) {
+      break;
+    }
+
     adc_sample adc_data;
     queue_remove_blocking(&adc_queue, &adc_data);
-    adc_sample_packet adc_data_p; // Packing: 4 x 12bit → 6 byte
-    adc_data_p.timestamp = adc_data.timestamp;
-    adc_data_p.adc[0] = adc_data.adc[0] & 0xFF;
-    adc_data_p.adc[1] = ((adc_data.adc[0] >> 8) & 0x0F) | ((adc_data.adc[1] & 0x0F) << 4);
-    adc_data_p.adc[2] = (adc_data.adc[1] >> 4) & 0xFF;
-    adc_data_p.adc[3] = adc_data.adc[2] & 0xFF;
-    adc_data_p.adc[4] = ((adc_data.adc[2] >> 8) & 0x0F) | ((adc_data.adc[3] & 0x0F) << 4);
-    adc_data_p.adc[5] = (adc_data.adc[3] >> 4) & 0xFF;
 
-    vector_adc[indice_adc] = adc_data_p;
+    adc_sample_packet* p = &vector_adc[indice_adc];
+    p->timestamp = adc_data.timestamp;
+
+    uint16_t a0 = adc_data.adc[0];
+    uint16_t a1 = adc_data.adc[1];
+    uint16_t a2 = adc_data.adc[2];
+    uint16_t a3 = adc_data.adc[3];
+
+    // Packing 4 x 12 bit → 6 byte
+    p->adc[0] = a0 & 0xFF;
+    p->adc[1] = ((a0 >> 8) & 0x0F) | ((a1 & 0x0F) << 4);
+    p->adc[2] = (a1 >> 4) & 0xFF;
+    p->adc[3] = a2 & 0xFF;
+    p->adc[4] = ((a2 >> 8) & 0x0F) | ((a3 & 0x0F) << 4);
+    p->adc[5] = (a3 >> 4) & 0xFF;
+
     indice_adc = (indice_adc + 1) % N_SAMPLES_ADC_VECT;
-    count_adc_data = min(count_adc_data + 1, N_SAMPLES_ADC_VECT);
+
+    if (count_adc_data < N_SAMPLES_ADC_VECT) {
+        count_adc_data++;
+    }
     level_queue--;
-  }
+}
 
   /* Create Packet */
   if(count_imu_data >= N_SAMPLES_IMU_PACKET && count_adc_data >= N_SAMPLES_ADC_PACKET){ 
