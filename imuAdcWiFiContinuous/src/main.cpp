@@ -16,16 +16,18 @@ static int status = WL_IDLE_STATUS;
 /* ADC */
 #define MASK_12bit 0x0FFF
 #define N_ADC_CHANNELS_ENABLE 4
-#define N_SAMPLES_ADC_QUEUE 3000
-#define N_SAMPLES_ADC_VECT N_SAMPLES_ADC_QUEUE
+#define N_SAMPLES_ADC_QUEUE 3016  //52 pacchetti
+#define N_SAMPLES_ADC_RING N_SAMPLES_ADC_QUEUE 
 #define N_SAMPLES_ADC_PACKET 58
 #define THRESHOLD_ADC_QUEUE (N_SAMPLES_ADC_QUEUE * QUEUE_THRESHOLD_PCT /100)
 static uint8_t current_channel = 0;
 
+volatile int overflow_adc_ring_core1=0;
+
 /* IMU */
 #define SR 208.0f // frequency acc, gyr -- maggiore di 417Hz un timestamp ogni tot campioni acc,gyr
-#define N_SAMPLES_IMU_QUEUE 624
-#define N_SAMPLES_IMU_VECT N_SAMPLES_IMU_QUEUE
+#define N_SAMPLES_IMU_QUEUE 624 //52 pacchetti
+#define N_SAMPLES_IMU_RING N_SAMPLES_IMU_QUEUE 
 #define N_SAMPLES_IMU_PACKET 12
 #define THRESHOLD_IMU_QUEUE (N_SAMPLES_IMU_QUEUE * QUEUE_THRESHOLD_PCT /100)
 static LSM6DSOXSensor lsm6dsoxSensor = LSM6DSOXSensor(&Wire, LSM6DSOX_I2C_ADD_L);
@@ -73,8 +75,8 @@ typedef struct {
   adc_sample_packet adc_block[N_SAMPLES_ADC_PACKET];
 } packet;
 
-static imu_sample vector_imu[N_SAMPLES_IMU_VECT];  
-static adc_sample_packet vector_adc[N_SAMPLES_ADC_VECT]; 
+static imu_sample imu_ring_core0[N_SAMPLES_IMU_RING];  
+static adc_sample_packet adc_ring_core0[N_SAMPLES_ADC_RING]; 
 
 volatile uint16_t n_sample_fifo=0;
 
@@ -85,11 +87,11 @@ const char* server_ip = "192.168.5.1";
 const int port = 6789;
 static WiFiClient client;
 
-static int indice_imu=0;
-static int indice_adc=0;
+static int imu_ring_index=0;
+static int adc_ring_index=0;
 
-static int count_imu_data=0;
-static int count_adc_data=0;
+static int imu_data_count=0;
+static int adc_data_count=0;
 
 
 void core1_setup();
@@ -158,18 +160,18 @@ void loop(){
     imu_queue_max_level = level_queue;
   }
   while (level_queue > 0) {
-    if (count_imu_data >= N_SAMPLES_IMU_VECT && level_queue < THRESHOLD_IMU_QUEUE) {
+    if (imu_data_count >= N_SAMPLES_IMU_RING && level_queue < THRESHOLD_IMU_QUEUE) {
         break;
     }
 
     imu_sample imu_data;
     queue_remove_blocking(&imu_queue, &imu_data);
 
-    vector_imu[indice_imu] = imu_data;
-    indice_imu = (indice_imu + 1) % N_SAMPLES_IMU_VECT;
+    imu_ring_core0[imu_ring_index] = imu_data;
+    imu_ring_index = (imu_ring_index + 1) % N_SAMPLES_IMU_RING;
 
-    if (count_imu_data < N_SAMPLES_IMU_VECT) {
-        count_imu_data++;
+    if (imu_data_count < N_SAMPLES_IMU_RING) {
+        imu_data_count++;
     }
     level_queue--;
 }
@@ -180,14 +182,14 @@ void loop(){
     adc_queue_max_level = level_queue;
   }
   while (level_queue > 0) {
-    if (count_imu_data >= N_SAMPLES_IMU_VECT && level_queue < THRESHOLD_ADC_QUEUE) {
+    if (adc_data_count >= N_SAMPLES_ADC_RING && level_queue < THRESHOLD_ADC_QUEUE) {
       break;
     }
 
     adc_sample adc_data;
     queue_remove_blocking(&adc_queue, &adc_data);
 
-    adc_sample_packet* p = &vector_adc[indice_adc];
+    adc_sample_packet* p = &adc_ring_core0[adc_ring_index];
     p->timestamp = adc_data.timestamp;
 
     uint16_t a0 = adc_data.adc[0];
@@ -203,21 +205,21 @@ void loop(){
     p->adc[4] = ((a2 >> 8) & 0x0F) | ((a3 & 0x0F) << 4);
     p->adc[5] = (a3 >> 4) & 0xFF;
 
-    indice_adc = (indice_adc + 1) % N_SAMPLES_ADC_VECT;
+    adc_ring_index = (adc_ring_index + 1) % N_SAMPLES_ADC_RING;
 
-    if (count_adc_data < N_SAMPLES_ADC_VECT) {
-        count_adc_data++;
+    if (adc_data_count < N_SAMPLES_ADC_RING) {
+        adc_data_count++;
     }
     level_queue--;
 }
 
   /* Create Packet */
-  if(count_imu_data >= N_SAMPLES_IMU_PACKET && count_adc_data >= N_SAMPLES_ADC_PACKET){ 
-    int start_imu = (indice_imu - count_imu_data + N_SAMPLES_IMU_VECT) % N_SAMPLES_IMU_VECT;
-    int start_adc = (indice_adc - count_adc_data + N_SAMPLES_ADC_VECT) % N_SAMPLES_ADC_VECT;
+  if(imu_data_count >= N_SAMPLES_IMU_PACKET && adc_data_count >= N_SAMPLES_ADC_PACKET){ 
+    int start_imu = (imu_ring_index - imu_data_count + N_SAMPLES_IMU_RING) % N_SAMPLES_IMU_RING;
+    int start_adc = (adc_ring_index - adc_data_count + N_SAMPLES_ADC_RING) % N_SAMPLES_ADC_RING;
 
-    count_adc_data-=N_SAMPLES_ADC_PACKET;
-    count_imu_data-=N_SAMPLES_IMU_PACKET;
+    adc_data_count-=N_SAMPLES_ADC_PACKET;
+    imu_data_count-=N_SAMPLES_IMU_PACKET;
 
     uint8_t buffer[PACKET_SIZE];
     int offset = 0;
@@ -229,27 +231,27 @@ void loop(){
     buffer[offset++] = (num_pkt_inviati >> 24) & 0xFF;
 
     /* imu samples */
-    for (int i = 0; i < N_SAMPLES_IMU_PACKET; ++i) {
-      int index = (start_imu + i) % N_SAMPLES_IMU_VECT;
-      memcpy(buffer + offset, vector_imu[index].timestamp, 4);
+    for (int i = 0; i < N_SAMPLES_IMU_PACKET; i++) {
+      int index = (start_imu + i) % N_SAMPLES_IMU_RING;
+      memcpy(buffer + offset, imu_ring_core0[index].timestamp, 4);
       offset += 4;
-      memcpy(buffer + offset, vector_imu[index].gyr, 6);
+      memcpy(buffer + offset, imu_ring_core0[index].gyr, 6);
       offset += 6;
-      memcpy(buffer + offset, vector_imu[index].acc, 6);
+      memcpy(buffer + offset, imu_ring_core0[index].acc, 6);
       offset += 6;
     }
 
     /* adc samples */
-    for (int i = 0; i < N_SAMPLES_ADC_PACKET; ++i) {
-      int index = (start_adc + i) % N_SAMPLES_ADC_VECT;
+    for (int i = 0; i < N_SAMPLES_ADC_PACKET; i++) {
+      int index = (start_adc + i) % N_SAMPLES_ADC_RING;
 
-      uint32_t t = vector_adc[index].timestamp;
+      uint32_t t = adc_ring_core0[index].timestamp;
       buffer[offset++] = (t >> 0) & 0xFF;
       buffer[offset++] = (t >> 8) & 0xFF;
       buffer[offset++] = (t >> 16) & 0xFF;
       buffer[offset++] = (t >> 24) & 0xFF;
 
-      memcpy(buffer + offset, vector_adc[index].adc, 6);
+      memcpy(buffer + offset, adc_ring_core0[index].adc, 6);
       offset += 6;
     }
 
@@ -279,11 +281,12 @@ void loop(){
     if (num_pkt_inviati>100000){
       Serial.printf("Stop per test, inviati %d pacchetti\n", num_pkt_inviati);
       Serial.printf("Max level queue: \n imu_queue: %d\nadc_queue: %d\n", imu_queue_max_level, adc_queue_max_level);
+      Serial.printf("num overflow ring core 1 adc: %d\n", overflow_adc_ring_core1);
       while(true);
     }
 
   }else{
-    delay(1);
+    delay(5);
   }
 
   if(millis()-time_invio_pkt > TIMEOUT_MS){
@@ -321,8 +324,8 @@ void loop(){
     }
 
     time_invio_pkt=millis();
-    Serial.printf("FIFO_IMU = %d, queue_imu %d, vect_imu %d\n", n_sample_fifo, queue_get_level(&imu_queue), count_imu_data);
-    Serial.printf("queue_adc %d, vect_adc %d\n", queue_get_level(&adc_queue), count_adc_data);
+    Serial.printf("FIFO_IMU = %d, queue_imu %d, vect_imu %d\n", n_sample_fifo, queue_get_level(&imu_queue), imu_data_count);
+    Serial.printf("queue_adc %d, vect_adc %d\n", queue_get_level(&adc_queue), adc_data_count);
     Serial.printf("Max level queue: \n imu_queue: %d\nadc_queue: %d\n", imu_queue_max_level, adc_queue_max_level);
   }
   
@@ -338,6 +341,13 @@ void loop(){
  * 
  *******************************************************************/
 
+#define ADC_RING_CORE1_SIZE 250
+static adc_sample adc_ring_core1[ADC_RING_CORE1_SIZE];
+static uint8_t adc_ring_head = 0;
+static uint8_t adc_ring_tail = 0;
+
+
+
 /* interrupt ADC */
 static adc_sample sample_adc; 
 void adc_interrupt_handler() { 
@@ -347,7 +357,17 @@ void adc_interrupt_handler() {
   sample_adc.adc[current_channel] = adc_fifo_get();
 
   if (current_channel == N_ADC_CHANNELS_ENABLE-1) {  // tutti i canali sono stati letti 
-    queue_try_add(&adc_queue, &sample_adc);
+    uint8_t next_head = (adc_ring_head + 1) % ADC_RING_CORE1_SIZE;
+
+    if (next_head != adc_ring_tail) {
+      adc_ring_core1[adc_ring_head] = sample_adc;
+      adc_ring_head = next_head;
+    } else {
+      adc_ring_core1[adc_ring_head] = sample_adc;
+      adc_ring_head = next_head;
+      overflow_adc_ring_core1++;
+    }
+
   }
 
   current_channel = (current_channel + 1) % N_ADC_CHANNELS_ENABLE;
@@ -461,5 +481,10 @@ void core1_loop() {
       }
 
     }
+  }
+
+  while (adc_ring_tail != adc_ring_head) {
+    queue_add_blocking(&adc_queue, &adc_ring_core1[adc_ring_tail]);
+    adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
   }
 }
