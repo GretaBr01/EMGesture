@@ -14,7 +14,6 @@ static int status = WL_IDLE_STATUS;
 #define QUEUE_THRESHOLD_PCT 90
 
 /* ADC */
-#define MASK_12bit 0x0FFF
 #define N_ADC_CHANNELS_ENABLE 4
 #define N_SAMPLES_ADC_QUEUE 3016  //52 pacchetti
 #define N_SAMPLES_ADC_RING N_SAMPLES_ADC_QUEUE 
@@ -174,7 +173,7 @@ void loop(){
         imu_data_count++;
     }
     level_queue--;
-}
+  }
   
   /* get sample ADC queue  - timestamp, adc0, adc1, adc2, adc3 */
   level_queue = queue_get_level(&adc_queue);
@@ -211,7 +210,7 @@ void loop(){
         adc_data_count++;
     }
     level_queue--;
-}
+  }
 
   /* Create Packet */
   if(imu_data_count >= N_SAMPLES_IMU_PACKET && adc_data_count >= N_SAMPLES_ADC_PACKET){ 
@@ -278,7 +277,7 @@ void loop(){
     num_pkt_inviati++;
     time_invio_pkt=millis();
 
-    if (num_pkt_inviati>100000){
+    if (num_pkt_inviati>1000){
       Serial.printf("Stop per test, inviati %d pacchetti\n", num_pkt_inviati);
       Serial.printf("Max level queue: \n imu_queue: %d\nadc_queue: %d\n", imu_queue_max_level, adc_queue_max_level);
       Serial.printf("num overflow ring core 1 adc: %d\n", overflow_adc_ring_core1);
@@ -341,11 +340,12 @@ void loop(){
  * 
  *******************************************************************/
 
-#define ADC_RING_CORE1_SIZE 250
+#define ADC_RING_CORE1_SIZE 900
 static adc_sample adc_ring_core1[ADC_RING_CORE1_SIZE];
 static uint8_t adc_ring_head = 0;
 static uint8_t adc_ring_tail = 0;
 
+const int RATIO_FREQ= round(1000/208); //rapporto frequenza ADC e IMU
 
 
 /* interrupt ADC */
@@ -483,8 +483,15 @@ void core1_loop() {
     }
   }
 
-  while (adc_ring_tail != adc_ring_head) {
-    queue_add_blocking(&adc_queue, &adc_ring_core1[adc_ring_tail]);
-    adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
+  int temp_head = adc_ring_head;
+  
+  int i=0;
+  while (adc_ring_tail != temp_head && i<RATIO_FREQ) {
+    if(queue_try_add(&adc_queue, &adc_ring_core1[adc_ring_tail])){
+      adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
+      i++;
+    }else{
+      break;  //queue piena
+    }
   }
 }
