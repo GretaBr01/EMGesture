@@ -497,6 +497,8 @@ void core1_loop() {
     if(queue_try_add(&adc_queue, &adc_ring_core1[adc_ring_tail])){
       adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
       i++;
+    }else{
+      break;
     }
   }
 }
