@@ -148,7 +148,7 @@ void setup() {
 }
 
 static unsigned long time_invio_pkt;
-const unsigned long TIMEOUT_MS = 2000;  // massimo tempo timout invio pacchetto
+const unsigned long TIMEOUT_MS = 5000;  // massimo tempo timout invio pacchetto
 static uint32_t timeout_count=0;
 
 void loop(){
@@ -281,7 +281,15 @@ void loop(){
       Serial.printf("Stop per test, inviati %d pacchetti\n", num_pkt_inviati);
       Serial.printf("Max level queue: \n imu_queue: %d\nadc_queue: %d\n", imu_queue_max_level, adc_queue_max_level);
       Serial.printf("num overflow ring core 1 adc: %d\n", overflow_adc_ring_core1);
-      while(true);
+
+      delay(2000);
+      Serial.printf("\nlibero le queue\n\n");
+      queue_free(&imu_queue);
+      queue_free(&adc_queue);
+      queue_init(&imu_queue, sizeof(imu_sample), N_SAMPLES_IMU_QUEUE);
+      queue_init(&adc_queue, sizeof(adc_sample), N_SAMPLES_ADC_QUEUE);      
+      Serial.printf("\n\nSTART ciclo\n\n");
+      num_pkt_inviati=0;
     }
 
   }else{
@@ -300,7 +308,6 @@ void loop(){
       uint8_t buffer[PACKET_SIZE];
       int offset = 0;
   
-      /* Num_pkt */
       buffer[offset++] = num_pkt_inviati & 0xFF;
       buffer[offset++] = (num_pkt_inviati >> 8) & 0xFF;
       buffer[offset++] = (num_pkt_inviati >> 16) & 0xFF;
@@ -308,7 +315,7 @@ void loop(){
       int payload=PACKET_SIZE-(sizeof(num_pkt_inviati)*2);
       memset(&buffer[offset], 0, payload);
       offset+=payload;
-      /* ~Num_pkt */
+      
       num_pkt_negato = ~num_pkt_inviati;
       buffer[offset++] = num_pkt_negato & 0xFF;
       buffer[offset++] = (num_pkt_negato >> 8) & 0xFF;
@@ -490,8 +497,6 @@ void core1_loop() {
     if(queue_try_add(&adc_queue, &adc_ring_core1[adc_ring_tail])){
       adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
       i++;
-    }else{
-      break;  //queue piena
     }
   }
 }
