@@ -141,6 +141,7 @@ void button_callback(uint gpio, uint32_t events) {
     switch (state_core0){
       case STATE_CORE0_IDLE:
         state_core0 = STATE_CORE0_INIT;
+        btn_interrupt=false;
       break;
 
       case STATE_CORE0_GET_IMU:
@@ -163,6 +164,15 @@ void button_callback(uint gpio, uint32_t events) {
       break;
     }
   }
+}
+
+void changeStateCore0(core0_state_t new_state){
+  if(!btn_interrupt){
+    state_core0 = new_state;
+  }else{
+    // set state_core0 in button_callback()
+    btn_interrupt=false;  //reset interrupt
+  }   
 }
 
 void setup_button_interrupt() {
@@ -222,6 +232,9 @@ void setup() {
     delay(100);
   }
   
+  queue_init(&imu_queue, sizeof(imu_sample), N_SAMPLES_IMU_QUEUE);
+  queue_init(&adc_queue, sizeof(adc_sample), N_SAMPLES_ADC_QUEUE);
+  
   multicore_launch_core1(core1_main);
   setup_button_interrupt();
   Serial.println("start");
@@ -231,9 +244,6 @@ void setup() {
 void loop(){
   switch (state_core0){
     case  STATE_CORE0_INIT:
-      queue_init(&imu_queue, sizeof(imu_sample), N_SAMPLES_IMU_QUEUE);
-      queue_init(&adc_queue, sizeof(adc_sample), N_SAMPLES_ADC_QUEUE);
-
       imu_data_count=0;
       imu_ring_index=0;
 
@@ -241,7 +251,7 @@ void loop(){
       adc_ring_index=0;
 
       multicore_fifo_push_blocking(STATE_CORE1_INIT);
-      state_core0 = STATE_CORE0_GET_IMU;
+      changeStateCore0(STATE_CORE0_GET_IMU);  
       break;
 
     case STATE_CORE0_GET_IMU:
@@ -264,11 +274,7 @@ void loop(){
         imu_level_queue--;
       }
 
-      if(!btn_interrupt){
-        state_core0=STATE_CORE0_GET_ADC;
-      }else{
-        btn_interrupt=false;
-      }      
+      changeStateCore0(STATE_CORE0_GET_ADC);    
       break;
 
     case STATE_CORE0_GET_ADC:
@@ -306,11 +312,7 @@ void loop(){
         adc_level_queue--;
       }
 
-      if(!btn_interrupt){
-        state_core0=STATE_CORE0_CREATE_PACKET;
-      }else{
-        btn_interrupt=false;
-      } 
+      changeStateCore0(STATE_CORE0_CREATE_PACKET);
       break;
     
     case  STATE_CORE0_CREATE_PACKET:
@@ -362,14 +364,10 @@ void loop(){
         packet_buffer[offset++] = (num_pkt_negato >> 16) & 0xFF;
         packet_buffer[offset++] = (num_pkt_negato >> 24) & 0xFF;
 
-        state_core0 = STATE_CORE0_SEND_PACKET;
-      }else{        
-        if(!btn_interrupt){
-          state_core0=STATE_CORE0_GET_IMU;
-          delay(5);
-        }else{
-          btn_interrupt=false;
-        }
+        changeStateCore0(STATE_CORE0_SEND_PACKET);
+      }else{   
+        changeStateCore0(STATE_CORE0_GET_IMU);
+        delay(5); 
       }
       break;
     case STATE_CORE0_SEND_PACKET:
@@ -387,16 +385,12 @@ void loop(){
       }
       num_pkt_inviati++;
 
-      if(!btn_interrupt){
-        state_core0=STATE_CORE0_GET_IMU;
-      }else{
-        btn_interrupt=false;
-      }
+      changeStateCore0(STATE_CORE0_GET_IMU);
       break;
 
     case STATE_CORE0_PREPARING_STOP:
       multicore_fifo_push_blocking(STATE_CORE1_STOP);
-      state_core0 = STATE_CORE0_IDLE;      
+      changeStateCore0(STATE_CORE0_IDLE);     
       break;
 
     case STATE_CORE0_IDLE:
@@ -447,11 +441,20 @@ void adc_interrupt_handler() {
 static bool fifo_multicore_interrupt = false;
 void core1_sio_irq() {
   // Just record the latest entry
-  while (multicore_fifo_rvalid())
+  while (multicore_fifo_rvalid()){
     state_core1 =(core1_state_t) multicore_fifo_pop_blocking(); // stop o init
     fifo_multicore_interrupt=true;
-
+  }
   multicore_fifo_clear_irq();
+}
+
+void changeStateCore1(core1_state_t new_state){
+  if(!fifo_multicore_interrupt){
+    state_core1 = new_state;
+  }else{
+    // set state_core0 in button_callback()
+    fifo_multicore_interrupt=false;  //reset interrupt
+  }   
 }
 
 void core1_setup() {
@@ -512,7 +515,7 @@ void core1_loop() {
     lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE); // Abilita modalità continua FIFO del IMU (salva campioni Timestamp, Gyr, Acc)
     adc_run(true);
 
-    state_core1=STATE_CORE1_READING_IMU;
+    changeStateCore1(STATE_CORE1_READING_IMU);
     break;
 
   case STATE_CORE1_READING_IMU:
@@ -577,11 +580,7 @@ void core1_loop() {
       }
     }
 
-    if(!fifo_multicore_interrupt){
-      state_core1=STATE_CORE1_READING_ADC;
-    }else{
-      fifo_multicore_interrupt=false;
-    }
+    changeStateCore1(STATE_CORE1_READING_ADC);
     break;
 
   case STATE_CORE1_READING_ADC:
@@ -597,17 +596,13 @@ void core1_loop() {
       }
     }
 
-    if(!fifo_multicore_interrupt){
-      state_core1=STATE_CORE1_READING_IMU;
-    }else{
-      fifo_multicore_interrupt=false;
-    }
+    changeStateCore1(STATE_CORE1_READING_IMU);
     break;
 
   case STATE_CORE1_STOP:
     lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_BYPASS_MODE);
     adc_run(false);
-    state_core1=STATE_CORE1_IDLE;
+    changeStateCore1(STATE_CORE1_IDLE);
     break;
 
   case STATE_CORE1_IDLE:
