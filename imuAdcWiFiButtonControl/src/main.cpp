@@ -8,7 +8,7 @@
 #include "hardware/adc.h"
 #include "pico/util/queue.h"
 
-#define LED_PIN LED_BUILTIN
+#define LED_PIN D4
 static int status = WL_IDLE_STATUS;
 
 /* WiFi */
@@ -132,11 +132,19 @@ static int byte_inviati=0;
 static int temp_head = 0;
 static int cont = 0;
 
-static bool btn_interrupt=false;
+
 /* button */
 #define BUTTON_GPIO D8
+static bool btn_interrupt=false;
+
+static uint32_t btn_time = 0;
+#define DEBOUNCE_DELAY_MS 800
+bool btn_enabled = true;
+
 void button_callback(uint gpio, uint32_t events) {
-  if (events & GPIO_IRQ_EDGE_FALL) {
+  if (gpio == BUTTON_GPIO && events & GPIO_IRQ_EDGE_FALL && btn_enabled) {
+    btn_enabled = false;
+    btn_time = to_ms_since_boot(get_absolute_time());
     btn_interrupt = true;
     switch (state_core0){
       case STATE_CORE0_IDLE:
@@ -202,33 +210,35 @@ void core1_main() {
  * 
  *******************************************************************/
 void setup() {
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
   
   Serial.begin(115200);
   while (!Serial){
-    digitalWrite(LED_PIN, HIGH);
+    gpio_put(LED_PIN, HIGH);
     delay(500);
-    digitalWrite(LED_PIN, LOW);
+    gpio_put(LED_PIN, LOW);
     delay(500);
   }
 
   if (WiFi.status() == WL_NO_MODULE){
-    digitalWrite(LED_PIN, HIGH);
+    gpio_put(LED_PIN, HIGH);
     delay(500);
     while (true);
   } 
 
   while (status != WL_CONNECTED){
     status = WiFi.begin(ssid, password);
-    digitalWrite(LED_PIN, HIGH);
+    gpio_put(LED_PIN, HIGH);
     delay(300);
-    digitalWrite(LED_PIN, LOW);
+    gpio_put(LED_PIN, LOW);
     delay(300);
   }
 
   while (!client.connect(server_ip, port)) { 
-    digitalWrite(LED_PIN, HIGH);
+    gpio_put(LED_PIN, HIGH);
     delay(100);
-    digitalWrite(LED_PIN, LOW);
+    gpio_put(LED_PIN, LOW);
     delay(100);
   }
   
@@ -242,6 +252,11 @@ void setup() {
 }
 
 void loop(){
+  uint32_t now = to_ms_since_boot(get_absolute_time());
+
+  if (!btn_enabled && (now - btn_time > DEBOUNCE_DELAY_MS)) {
+    btn_enabled = true;
+  }
   switch (state_core0){
     case  STATE_CORE0_INIT:
       imu_data_count=0;
@@ -249,6 +264,8 @@ void loop(){
 
       adc_data_count=0;
       adc_ring_index=0;
+
+      gpio_put(LED_PIN, HIGH);
 
       multicore_fifo_push_blocking(STATE_CORE1_INIT);
       changeStateCore0(STATE_CORE0_GET_IMU);  
@@ -390,7 +407,8 @@ void loop(){
 
     case STATE_CORE0_PREPARING_STOP:
       multicore_fifo_push_blocking(STATE_CORE1_STOP);
-      changeStateCore0(STATE_CORE0_IDLE);     
+      changeStateCore0(STATE_CORE0_IDLE);   
+      gpio_put(LED_PIN, LOW);  
       break;
 
     case STATE_CORE0_IDLE:
