@@ -1,5 +1,5 @@
 /**
- * FNZIONA, MA controllare passaggio stato core 0 nel caso si ha valori in queue nello stato di preparazione stop
+ * il primo campione del primo pacchetto delle serie temporiali successive alla prima potrebbe essere un campione da buttare
  */
 #include <Arduino.h>
 
@@ -207,12 +207,11 @@ void setup() {
   gpio_init(LED_PIN);
   gpio_set_dir(LED_PIN, GPIO_OUT);
   
-  Serial.begin(115200);
-  while (!Serial){
+  for(int i=0;i<5;i++){
     gpio_put(LED_PIN, HIGH);
-    delay(500);
+    delay(50);
     gpio_put(LED_PIN, LOW);
-    delay(500);
+    delay(50);
   }
 
   if (WiFi.status() == WL_NO_MODULE){
@@ -241,7 +240,6 @@ void setup() {
   
   multicore_launch_core1(core1_main);
   setup_button_interrupt();
-  Serial.println("start");
   state_core0 = STATE_CORE0_IDLE;
 }
 
@@ -395,7 +393,7 @@ void loop(){
         }else{
           client.stop();
           gpio_put(LED_PIN, LOW);
-          delay(30);
+          delay(50);
           gpio_put(LED_PIN, HIGH);
           client.connect(server_ip, port);
         }  
@@ -462,12 +460,11 @@ void adc_interrupt_handler() {
   if (current_adc_channel == N_ADC_CHANNELS_ENABLE-1) {  // tutti i canali sono stati letti 
     uint8_t next_head = (adc_ring_core1_head + 1) % ADC_RING_CORE1_SIZE;
 
-    if (next_head != adc_ring_core1_tail) {
-      adc_ring_core1[adc_ring_core1_head] = sample_adc;
-      adc_ring_core1_head = next_head;
-    } else {
-      adc_ring_core1[adc_ring_core1_head] = sample_adc;
-      adc_ring_core1_head = next_head;
+    adc_ring_core1[adc_ring_core1_head] = sample_adc;
+    adc_ring_core1_head = next_head;
+
+    if (next_head == adc_ring_core1_tail) {
+      adc_ring_core1_tail = (adc_ring_core1_tail + 1) % ADC_RING_CORE1_SIZE;
     }
 
   }
@@ -480,7 +477,7 @@ static bool fifo_multicore_interrupt = false;
 void core1_sio_irq() {
   // Just record the latest entry
   while (multicore_fifo_rvalid()){
-    state_core1 =(core1_state_t) multicore_fifo_pop_blocking(); // stop o init
+    state_core1 =(core1_state_t) multicore_fifo_pop_blocking(); // msg stop or msg init
     fifo_multicore_interrupt=true;
   }
   multicore_fifo_clear_irq();
@@ -490,7 +487,7 @@ void changeStateCore1(core1_state_t new_state){
   if(!fifo_multicore_interrupt){
     state_core1 = new_state;
   }else{
-    // set state_core0 in button_callback()
+    // set state_core1 in core1_sio_irq()
     fifo_multicore_interrupt=false;  //reset interrupt
   }   
 }
