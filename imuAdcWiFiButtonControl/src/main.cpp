@@ -1,3 +1,6 @@
+/**
+ * FNZIONA, MA controllare passaggio stato core 0 nel caso si ha valori in queue nello stato di preparazione stop
+ */
 #include <Arduino.h>
 
 #include "LSM6DSOXSensor.h"
@@ -77,26 +80,25 @@ static uint32_t num_pkt_negato=0;
 static uint8_t packet_buffer[PACKET_SIZE];
 static int offset = 0;
 
+
 /* Queque */
 static queue_t imu_queue;
 static queue_t adc_queue;
-static uint16_t adc_queue_max_level=0;
-static uint16_t imu_queue_max_level=0;
 
 /* buffer ring core0*/
 static imu_sample imu_ring_core0[N_SAMPLES_IMU_RING]; 
-static int imu_ring_index=0;
-static int imu_data_count=0;
+static int imu_ring_core0_index=0;
+static int imu_data_core0_count=0;
 
 static adc_sample_packet adc_ring_core0[N_SAMPLES_ADC_RING]; 
-static int adc_ring_index=0;
-static int adc_data_count=0;
+static int adc_ring_core0_index=0;
+static int adc_data_core0_count=0;
 
 /* buffer ring core1*/
 #define ADC_RING_CORE1_SIZE 900
 static adc_sample adc_ring_core1[ADC_RING_CORE1_SIZE];
-static uint8_t adc_ring_head = 0;
-static uint8_t adc_ring_tail = 0;
+static uint8_t adc_ring_core1_head = 0;
+static uint8_t adc_ring_core1_tail = 0;
 
 const int RATIO_FREQ= round(1000/208); //rapporto frequenza ADC e IMU
 
@@ -146,42 +148,34 @@ void button_callback(uint gpio, uint32_t events) {
     btn_enabled = false;
     btn_time = to_ms_since_boot(get_absolute_time());
     btn_interrupt = true;
-    switch (state_core0){
-      case STATE_CORE0_IDLE:
-        state_core0 = STATE_CORE0_INIT;
-        btn_interrupt=false;
-      break;
-
-      case STATE_CORE0_GET_IMU:
-        state_core0 = STATE_CORE0_PREPARING_STOP;
-      break;
-
-      case STATE_CORE0_GET_ADC:
-        state_core0 = STATE_CORE0_PREPARING_STOP;
-      break;
-
-      case STATE_CORE0_CREATE_PACKET:
-        state_core0 = STATE_CORE0_PREPARING_STOP;
-      break;  
-
-      case STATE_CORE0_SEND_PACKET:
-        state_core0 = STATE_CORE0_PREPARING_STOP;
-      break;  
-
-      default:
-      break;
-    }
   }
 }
 
 void changeStateCore0(core0_state_t new_state){
   if(!btn_interrupt){
     state_core0 = new_state;
-  }else{
-    // set state_core0 in button_callback()
-    btn_interrupt=false;  //reset interrupt
-  }   
-}
+    return;
+  }
+
+  btn_interrupt=false;
+  switch (state_core0){
+    case STATE_CORE0_IDLE:
+      state_core0 = STATE_CORE0_INIT;
+    break;
+
+    case STATE_CORE0_INIT:
+    case STATE_CORE0_GET_IMU:
+    case STATE_CORE0_GET_ADC:
+    case STATE_CORE0_CREATE_PACKET:
+    case STATE_CORE0_SEND_PACKET:
+      state_core0 = STATE_CORE0_PREPARING_STOP;
+    break;  
+
+    default:
+    break;
+  }
+  
+}   
 
 void setup_button_interrupt() {
   gpio_init(BUTTON_GPIO);
@@ -253,40 +247,41 @@ void setup() {
 
 void loop(){
   uint32_t now = to_ms_since_boot(get_absolute_time());
-
   if (!btn_enabled && (now - btn_time > DEBOUNCE_DELAY_MS)) {
     btn_enabled = true;
   }
   switch (state_core0){
-    case  STATE_CORE0_INIT:
-      imu_data_count=0;
-      imu_ring_index=0;
+    case  STATE_CORE0_INIT: 
+      core0_stop = false;  
 
-      adc_data_count=0;
-      adc_ring_index=0;
+      imu_data_core0_count=0;
+      imu_ring_core0_index=0;
+
+      adc_data_core0_count=0;
+      adc_ring_core0_index=0;
 
       gpio_put(LED_PIN, HIGH);
 
       multicore_fifo_push_blocking(STATE_CORE1_INIT);
-      changeStateCore0(STATE_CORE0_GET_IMU);  
+      changeStateCore0(STATE_CORE0_GET_IMU);   
       break;
 
     case STATE_CORE0_GET_IMU:
       /* get sample IMU queue - timestamp, gyro, acc*/
       imu_level_queue = queue_get_level(&imu_queue);
       while (imu_level_queue > 0) {
-        if (imu_data_count >= N_SAMPLES_IMU_RING && imu_level_queue < THRESHOLD_IMU_QUEUE) {
+        if (imu_data_core0_count >= N_SAMPLES_IMU_RING && imu_level_queue < THRESHOLD_IMU_QUEUE) {
             break;
         }
 
         imu_sample imu_data;
         queue_remove_blocking(&imu_queue, &imu_data);
 
-        imu_ring_core0[imu_ring_index] = imu_data;
-        imu_ring_index = (imu_ring_index + 1) % N_SAMPLES_IMU_RING;
+        imu_ring_core0[imu_ring_core0_index] = imu_data;
+        imu_ring_core0_index = (imu_ring_core0_index + 1) % N_SAMPLES_IMU_RING;
 
-        if (imu_data_count < N_SAMPLES_IMU_RING) {
-            imu_data_count++;
+        if (imu_data_core0_count < N_SAMPLES_IMU_RING) {
+            imu_data_core0_count++;
         }
         imu_level_queue--;
       }
@@ -298,14 +293,14 @@ void loop(){
       /* get sample ADC queue  - timestamp, adc0, adc1, adc2, adc3 */
       adc_level_queue = queue_get_level(&adc_queue);
       while (adc_level_queue > 0) {
-        if (adc_data_count >= N_SAMPLES_ADC_RING && adc_level_queue < THRESHOLD_ADC_QUEUE) {
+        if (adc_data_core0_count >= N_SAMPLES_ADC_RING && adc_level_queue < THRESHOLD_ADC_QUEUE) {
           break;
         }
 
         adc_sample adc_data;
         queue_remove_blocking(&adc_queue, &adc_data);
 
-        adc_sample_packet* p = &adc_ring_core0[adc_ring_index];
+        adc_sample_packet* p = &adc_ring_core0[adc_ring_core0_index];
         p->timestamp = adc_data.timestamp;
 
         uint16_t a0 = adc_data.adc[0];
@@ -321,10 +316,10 @@ void loop(){
         p->adc[4] = ((a2 >> 8) & 0x0F) | ((a3 & 0x0F) << 4);
         p->adc[5] = (a3 >> 4) & 0xFF;
 
-        adc_ring_index = (adc_ring_index + 1) % N_SAMPLES_ADC_RING;
+        adc_ring_core0_index = (adc_ring_core0_index + 1) % N_SAMPLES_ADC_RING;
 
-        if (adc_data_count < N_SAMPLES_ADC_RING) {
-            adc_data_count++;
+        if (adc_data_core0_count < N_SAMPLES_ADC_RING) {
+            adc_data_core0_count++;
         }
         adc_level_queue--;
       }
@@ -334,12 +329,12 @@ void loop(){
     
     case  STATE_CORE0_CREATE_PACKET:
       /* Create Packet */
-      if(imu_data_count >= N_SAMPLES_IMU_PACKET && adc_data_count >= N_SAMPLES_ADC_PACKET){ 
-        int start_imu = (imu_ring_index - imu_data_count + N_SAMPLES_IMU_RING) % N_SAMPLES_IMU_RING;
-        int start_adc = (adc_ring_index - adc_data_count + N_SAMPLES_ADC_RING) % N_SAMPLES_ADC_RING;
+      if(imu_data_core0_count >= N_SAMPLES_IMU_PACKET && adc_data_core0_count >= N_SAMPLES_ADC_PACKET){ 
+        int start_imu = (imu_ring_core0_index - imu_data_core0_count + N_SAMPLES_IMU_RING) % N_SAMPLES_IMU_RING;
+        int start_adc = (adc_ring_core0_index - adc_data_core0_count + N_SAMPLES_ADC_RING) % N_SAMPLES_ADC_RING;
 
-        adc_data_count-=N_SAMPLES_ADC_PACKET;
-        imu_data_count-=N_SAMPLES_IMU_PACKET;
+        adc_data_core0_count-=N_SAMPLES_ADC_PACKET;
+        imu_data_core0_count-=N_SAMPLES_IMU_PACKET;
 
         offset = 0;
 
@@ -383,8 +378,12 @@ void loop(){
 
         changeStateCore0(STATE_CORE0_SEND_PACKET);
       }else{   
-        changeStateCore0(STATE_CORE0_GET_IMU);
-        delay(5); 
+        if(core0_stop){
+          changeStateCore0(STATE_CORE0_PREPARING_STOP);
+        }else{
+          changeStateCore0(STATE_CORE0_GET_IMU);
+          delay(5); 
+        }
       }
       break;
     case STATE_CORE0_SEND_PACKET:
@@ -393,25 +392,46 @@ void loop(){
       while(byte_inviati < PACKET_SIZE){
         if(client.connected()){
           byte_inviati = client.write(packet_buffer, PACKET_SIZE);
-          Serial.printf("%d, byte inviati %d\n", num_pkt_inviati, byte_inviati); 
         }else{
           client.stop();
-          Serial.printf("client non connesso\n");
+          gpio_put(LED_PIN, LOW);
+          delay(30);
+          gpio_put(LED_PIN, HIGH);
           client.connect(server_ip, port);
         }  
       }
       num_pkt_inviati++;
 
-      changeStateCore0(STATE_CORE0_GET_IMU);
+      if(core0_stop){
+        changeStateCore0(STATE_CORE0_PREPARING_STOP);
+      }else{
+        changeStateCore0(STATE_CORE0_GET_IMU);
+      }
+
       break;
 
     case STATE_CORE0_PREPARING_STOP:
+      core0_stop = true;
       multicore_fifo_push_blocking(STATE_CORE1_STOP);
-      changeStateCore0(STATE_CORE0_IDLE);   
-      gpio_put(LED_PIN, LOW);  
+
+      imu_level_queue = queue_get_level(&imu_queue);
+      adc_level_queue = queue_get_level(&adc_queue);
+
+      if(imu_level_queue > 0){
+        changeStateCore0(STATE_CORE0_GET_IMU); 
+      }else if(adc_level_queue > 0){
+        changeStateCore0(STATE_CORE0_GET_ADC); 
+      }else if(imu_data_core0_count >= N_SAMPLES_IMU_PACKET && adc_data_core0_count >= N_SAMPLES_ADC_PACKET){
+        changeStateCore0(STATE_CORE0_CREATE_PACKET);
+      }else{
+        changeStateCore0(STATE_CORE0_IDLE); 
+        gpio_put(LED_PIN, LOW);  
+      }
+
       break;
 
     case STATE_CORE0_IDLE:
+      changeStateCore0(STATE_CORE0_IDLE); 
       break;
     
     default:
@@ -440,14 +460,14 @@ void adc_interrupt_handler() {
   sample_adc.adc[current_adc_channel] = adc_fifo_get();
 
   if (current_adc_channel == N_ADC_CHANNELS_ENABLE-1) {  // tutti i canali sono stati letti 
-    uint8_t next_head = (adc_ring_head + 1) % ADC_RING_CORE1_SIZE;
+    uint8_t next_head = (adc_ring_core1_head + 1) % ADC_RING_CORE1_SIZE;
 
-    if (next_head != adc_ring_tail) {
-      adc_ring_core1[adc_ring_head] = sample_adc;
-      adc_ring_head = next_head;
+    if (next_head != adc_ring_core1_tail) {
+      adc_ring_core1[adc_ring_core1_head] = sample_adc;
+      adc_ring_core1_head = next_head;
     } else {
-      adc_ring_core1[adc_ring_head] = sample_adc;
-      adc_ring_head = next_head;
+      adc_ring_core1[adc_ring_core1_head] = sample_adc;
+      adc_ring_core1_head = next_head;
     }
 
   }
@@ -528,8 +548,8 @@ void core1_setup() {
 void core1_loop() {
   switch (state_core1){
   case STATE_CORE1_INIT:
-    adc_ring_head=0;
-    adc_ring_tail=0;
+    adc_ring_core1_head=0;
+    adc_ring_core1_tail=0;
     lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE); // Abilita modalità continua FIFO del IMU (salva campioni Timestamp, Gyr, Acc)
     adc_run(true);
 
@@ -602,12 +622,12 @@ void core1_loop() {
     break;
 
   case STATE_CORE1_READING_ADC:
-    temp_head = adc_ring_head;
+    temp_head = adc_ring_core1_head;
     
     cont=0;
-    while (adc_ring_tail != temp_head && cont<RATIO_FREQ) {
-      if(queue_try_add(&adc_queue, &adc_ring_core1[adc_ring_tail])){
-        adc_ring_tail = (adc_ring_tail + 1) % ADC_RING_CORE1_SIZE;
+    while (adc_ring_core1_tail != temp_head && cont<RATIO_FREQ) {
+      if(queue_try_add(&adc_queue, &adc_ring_core1[adc_ring_core1_tail])){
+        adc_ring_core1_tail = (adc_ring_core1_tail + 1) % ADC_RING_CORE1_SIZE;
         cont++;
       }else{
         break;
