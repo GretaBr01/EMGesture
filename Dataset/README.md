@@ -1,4 +1,8 @@
-# Descrizione Dataset
+# Posizionamento elettrodi
+![PCB](images/PCB.png)
+![Elettrodi](images/electrodes_position.png)
+
+# Descrizione Dati acquisiti
 i dati di imu sono grezzi (non sono moltiplicati per sensitivity)
 Un file contiene più ripetizioni dello stesso gesto
 Ogni ripetizione è separabile dalle altre controllando la differenza tra timestamp consecutivi.
@@ -10,8 +14,11 @@ L'ultima riperizione dei file potrebbe essere una serie temporale non completa
 
 ## Gesture: 
 - stopping
-- turning 
-- potholes
+- turning
+- left shift, danger
+
+![Gesture](images/gesture.png)
+
 reference: https://channel.endu.net/ciclismo/il-codice-dei-ciclisti/
 
 
@@ -29,6 +36,14 @@ AngularRate[0] = (int32_t)((float)((float)data_raw.i16bit[0] * sensitivity));
 
 range ADC: [0, 4095]
 
- 
+# Creazione Dataset
+I dati adc e imu sono contenuti nella cartella 'data'
+La cartella 'data' ha due sottocartelle, 'adc' e 'imu', che hanno a loro volta sottocartelle nominate come i gestures presi in analisi.
+
+Inserire i file .csv dei dati acquisiti nella sottocartella del gesto acquisito, rinominare i file anteponendo il nome del gesture. 
+
+Per creare il dataset eseguire lo script 'segment_series.py', numererà le serie temporali acquisite e salvate nei file .csv.
+Successivamete eseguire lo script 'create_df_segments.py', genera i file 'adc_dataset.csv' e 'imu_dataset.csv. I file generati raccolgono tutte le serie dei file .csv contenuti nelle cartelle 'data/adc' e 'dat/imu'.
+
 
 
