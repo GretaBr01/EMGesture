@@ -1,3 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Model weights
+*.pt
+*.h5
+*.ckpt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+Dataset/dataset/*
+# --------------------------------
+
 # Ignore PlatformIO
 .pio
 .pioenvs
