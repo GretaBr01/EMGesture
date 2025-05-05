@@ -2,17 +2,21 @@ import os
 import pandas as pd
 import numpy as np
 from scipy.stats import skew, kurtosis
+from tqdm import tqdm
+from tqdm.auto import tqdm as tqdm_auto
+
 
 # === PARAMETRI VARIABILI ===
-window_size = 100   # numero di campioni per finestra
+window_size_adc = 125   # numero di campioni per finestra
+window_size_imu = 26
 use_overlap = True
-overlap_ratio = 0.5 if use_overlap else 0.0  # percentuale di sovrapposizione
+overlap_ratio = 0.1 if use_overlap else 0.0  # percentuale di sovrapposizione
 
 # === CONFIGURAZIONE ===
 folder = "dataset"
 adc_path = f"./{folder}/adc_dataset.csv"
 imu_path = f"./{folder}/imu_dataset.csv"
-output_folder = f"dataset_features_slidingWindow_{window_size}"
+output_folder = f"dataset_features_slidingWindow_{window_size_adc}"
 output_adc_path = f"./{output_folder}/adc_features_dataset.csv"
 output_imu_path = f"./{output_folder}/imu_features_dataset.csv"
 output_df_path = f"./{output_folder}/features_dataset.csv"
@@ -69,18 +73,24 @@ def signal_statistic(x, sensor_name, Norm=True):
 def sliding_window_df(df, window_size, overlap_ratio):
     step = int(window_size * (1 - overlap_ratio))
     windowed = []
-    for (label, series_id), group in df.groupby(["label", "series_id"]):
+
+    grouped = df.groupby(["label", "series_id"])
+    for (label, series_id), group in tqdm(grouped, desc="Sliding windows"):
         data = group.reset_index(drop=True)
+        data = data.sort_values("timestamp").reset_index(drop=True) 
+
+        window_number = 0 
         for start in range(0, len(data) - window_size + 1, step):
             window = data.iloc[start:start + window_size].copy()
-            window["window_id"] = f"{series_id}_{start}"
+            window["window_id"] = f"{series_id}_{window_number}"
             windowed.append(window)
+            window_number+=1
     return pd.concat(windowed, ignore_index=True)
 
 def dfFeatures(df, sensors):
     features = []
     grouped = df.groupby("window_id")
-    for sensor in sensors:
+    for sensor in tqdm(sensors, desc="Extracting features"):
         stats_df = grouped[sensor].apply(
             lambda x: signal_statistic(x, sensor_name=get_sensor_type(sensor), Norm=True)
         ).unstack().reset_index()
@@ -94,22 +104,17 @@ def dfFeatures(df, sensors):
 
 # === IMU ===
 df_imu = pd.read_csv(imu_path)
-df_imu = df_imu.drop(columns=["timestamp", "pkt_time_ns"])
-sensors_imu = [col for col in df_imu.columns if col not in ["series_id", "label"]]
-df_imu_windowed = sliding_window_df(df_imu, window_size, overlap_ratio)
+sensors_imu = [col for col in df_imu.columns if col not in ["series_id", "label", "timestamp", "pkt_time_ns"]]
+df_imu_windowed = sliding_window_df(df_imu, window_size_imu, overlap_ratio)
 df_imu_features = dfFeatures(df_imu_windowed, sensors_imu)
 df_imu_features[["label", "series_id"]] = df_imu_windowed.groupby("window_id")[["label", "series_id"]].first().reset_index(drop=True)
 df_imu_features.to_csv(output_imu_path, index=False)
 
 # === ADC ===
 df_adc = pd.read_csv(adc_path)
-df_adc = df_adc.drop(columns=["timestamp", "pkt_time_ns"])
-sensors_adc = [col for col in df_adc.columns if col not in ["series_id", "label"]]
-df_adc_windowed = sliding_window_df(df_adc, window_size, overlap_ratio)
+sensors_adc = [col for col in df_adc.columns if col not in ["series_id", "label", "timestamp", "pkt_time_ns"]]
+df_adc_windowed = sliding_window_df(df_adc, window_size_adc, overlap_ratio)
 df_adc_features = dfFeatures(df_adc_windowed, sensors_adc)
 df_adc_features[["label", "series_id"]] = df_adc_windowed.groupby("window_id")[["label", "series_id"]].first().reset_index(drop=True)
 df_adc_features.to_csv(output_adc_path, index=False)
 
-# === MERGE TOTALE ===
-df_features = pd.merge(df_imu_features, df_adc_features, on=["window_id", "label", "series_id"])
-df_features.to_csv(output_df_path, index=False)
