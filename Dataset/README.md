@@ -45,5 +45,8 @@ Inserire i file .csv dei dati acquisiti nella sottocartella del gesto acquisito,
 Per creare il dataset eseguire lo script 'segment_series.py', numererà le serie temporali acquisite e salvate nei file .csv.
 Successivamete eseguire lo script 'create_df_segments.py', genera i file 'adc_dataset.csv' e 'imu_dataset.csv. I file generati raccolgono tutte le serie dei file .csv contenuti nelle cartelle 'data/adc' e 'dat/imu'.
 
+Per creare il dataset delle features possibili eseguire lo script 'create_df_features.py'.
+Genera i file nella cartella 'dataset_features'
+
 
 
