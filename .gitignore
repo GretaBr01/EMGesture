@@ -17,7 +17,19 @@ env/
 .DS_Store
 Thumbs.db
 
+# Dataset folders - ignore contents, keep folders
+Dataset/*
+!Dataset/.gitkeep
+
+Dataset/data/*
+!Dataset/data/.gitkeep
+
+Dataset/data_numbered_series/*
+!Dataset/data_numbered_series/.gitkeep
+
 Dataset/dataset/*
+!Dataset/dataset/.gitkeep
+
 # --------------------------------
 
 # Ignore PlatformIO
