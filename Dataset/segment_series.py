@@ -11,8 +11,8 @@ os.makedirs(output_folder, exist_ok=True)
 ADC_threshold_time_ns=800*1000
 IMU_threshold_time_ns=800*1000/25
 
-adc_th=10*1000
-imu_th=10*1000/25
+adc_th=1020
+imu_th=192
 
 # Inizializza contatori separati
 adc_counter = 0
@@ -62,7 +62,7 @@ for folder_name in folder_path:
 
                 # Segmentazione
                 df['timestamp_diff'] = df['timestamp'].diff()
-                df['series_id'] = (df['timestamp_diff'] > threshold).cumsum()
+                df['series_id'] = (df['timestamp_diff'] > threshold).cumsum() + current_counter
 
                 new_max_series_id = df['series_id'].max() + 1
                 if is_adc:
