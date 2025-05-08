@@ -32,6 +32,18 @@ for folder_name in folder_path:
                     th=adc_th
                     current_counter = adc_counter
                     is_adc = True
+                    
+                    with open(file_path, 'r') as f:
+                        lines = f.readlines()
+
+                    # Sostituisci 'adc' con 'emg' nella prima riga
+                    lines[0] = lines[0].replace("adc", "emg")
+
+                    # Sovrascrivi il file con la nuova intestazione
+                    with open(file_path, 'w') as f:
+                        f.writelines(lines)
+                    
+
                 elif "imu" in lower_name:
                     threshold = IMU_threshold_time_ns
                     th=imu_th

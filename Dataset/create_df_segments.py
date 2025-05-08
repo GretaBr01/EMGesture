@@ -3,7 +3,7 @@ import os
 
 data_folder = "./data_numbered_series"
 output_folder = "dataset"
-output_adc_path = f"./{output_folder}/adc_dataset.csv"
+output_adc_path = f"./{output_folder}/emg_dataset.csv"
 output_imu_path = f"./{output_folder}/imu_dataset.csv"
 
 os.makedirs(output_folder, exist_ok=True)
@@ -28,6 +28,10 @@ for file_name in os.listdir(data_folder):
         sensor_type = parts[1]
 
         df["label"] = label
+
+        #rimuovo ultima serie che potrebbe essere corrotta (l'arduino si interrompe durante il movimento)
+        max_series_id = df["series_id"].max()
+        df = df[df["series_id"] != max_series_id]
 
         # Rinumerazione dei series_id separata per tipo di sensore
         old_series = df["series_id"].unique()

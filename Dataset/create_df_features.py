@@ -7,11 +7,11 @@ from scipy.stats import kurtosis
 
 # === CONFIGURAZIONE ===
 folder = "dataset"
-adc_path = f"./{folder}/adc_dataset.csv"
+adc_path = f"./{folder}/emg_dataset.csv"
 imu_path = f"./{folder}/imu_dataset.csv"
 
 output_folder = "dataset_features"
-output_adc_path = f"./{output_folder}/adc_features_dataset.csv"
+output_adc_path = f"./{output_folder}/emg_features_dataset.csv"
 output_imu_path = f"./{output_folder}/imu_features_dataset.csv"
 output_df_path = f"./{output_folder}/features_dataset.csv"
 
@@ -21,13 +21,15 @@ os.makedirs(output_folder, exist_ok=True)
 SENSOR_DATA = {
     "acc": {"frequenza_campionamento": 208, "full_scale": 2**15}, # data raw
     "gyr": {"frequenza_campionamento": 208, "full_scale": 2**15}, # data raw
-    "adc": {"frequenza_campionamento": 1000, "full_scale": 4095.0},
+    "emg": {"frequenza_campionamento": 1000, "full_scale": 4095.0},
 }
 
 # === FUNZIONI STATISTICHE ===
 feature_functions = {
     'mean': lambda x, **kwargs: np.mean(x),
     'std': lambda x, **kwargs: np.std(x),
+    # 'c_mean': lambda x, **kwargs: np.array([np.mean(x), np.std(x)]),
+    # 'c_mean': lambda x, **kwargs: complex(np.mean(x), np.std(x)),
     'min': lambda x, **kwargs: np.min(x),
     'max': lambda x, **kwargs: np.max(x),
     'q5': lambda x, **kwargs: np.percentile(x, 5),
@@ -37,7 +39,6 @@ feature_functions = {
     'energy': lambda x, delta_t, **kwargs: np.sum(x**2) * delta_t,
     'rms': lambda x, **kwargs: np.sqrt(np.mean(x**2)),
     'energy_ac': lambda x_ac, delta_t, **kwargs: np.sum(x_ac**2) * delta_t,
-    'power_ac': lambda x_ac, delta_t, L, **kwargs: np.sum(x_ac**2) * delta_t / (delta_t * L),
     'rms_ac': lambda x_ac, **kwargs: np.sqrt(np.mean(x_ac**2)), 
     'skewness': lambda x, **kwargs: skew(x),
     'kurtosis': lambda x, **kwargs: kurtosis(x)
@@ -96,6 +97,11 @@ def dfFeatures(df, sensors):
 
 # === IMU ===
 df_imu = pd.read_csv(imu_path)
+
+# Calcolo vettore accelerometro e giroscopio
+df_imu["acc_vector"] = np.sqrt(df_imu["acc_x"]**2 + df_imu["acc_y"]**2 + df_imu["acc_z"]**2)
+df_imu["gyr_vector"] = np.sqrt(df_imu["gyr_x"]**2 + df_imu["gyr_y"]**2 + df_imu["gyr_z"]**2)
+
 df_imu_features=df_imu.drop(columns=["timestamp", "pkt_time_ns"])
 sensors_imu=(df_imu_features.columns.values.tolist())
 sensors_imu.remove("series_id")
@@ -119,4 +125,8 @@ df_adc_features.to_csv(output_adc_path, index=False)
 # === MERGE TOTALE ===
 df_features = pd.merge(df_imu_features, df_adc_features, on=["label", "series_id"])
 df_features.to_csv(output_df_path, index=False)
+
+import pickle
+with open("file.pk", "wb") as f:
+  pickle.dump(df_features, f)
 
