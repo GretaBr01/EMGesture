@@ -10,8 +10,10 @@ os.makedirs(output_folder, exist_ok=True)
 
 dfs_adc = []
 dfs_imu = []
-series_counter_adc = 0
+series_counter_emg = 0
 series_counter_imu = 0
+max_time_rel_imu=0
+max_time_rel_emg=0
 
 for file_name in os.listdir(data_folder):
     if not file_name.endswith("_labeled.csv"):
@@ -36,13 +38,15 @@ for file_name in os.listdir(data_folder):
         # Rinumerazione dei series_id separata per tipo di sensore
         old_series = df["series_id"].unique()
 
-        if sensor_type == "adc":
+        if sensor_type == "emg":
             series_map = {
-                old: new for old, new in zip(sorted(old_series), range(series_counter_adc, series_counter_adc + len(old_series)))
+                old: new for old, new in zip(sorted(old_series), range(series_counter_emg, series_counter_emg + len(old_series)))
             }
             df["series_id"] = df["series_id"].map(series_map)
-            series_counter_adc += len(old_series)
+            series_counter_emg += len(old_series)
+            df["time_rel"]= df["time_rel"]+ max_time_rel_emg
             dfs_adc.append(df)
+            max_time_rel_emg=max(df["time_rel"])
 
         elif sensor_type == "imu":
             series_map = {
@@ -50,7 +54,9 @@ for file_name in os.listdir(data_folder):
             }
             df["series_id"] = df["series_id"].map(series_map)
             series_counter_imu += len(old_series)
+            df["time_rel"]= df["time_rel"]+ max_time_rel_imu
             dfs_imu.append(df)
+            max_time_rel_imu=max(df["time_rel"])
 
         else:
             print(f"[!] Sensore non riconosciuto nel file: {file_name}")
@@ -64,13 +70,13 @@ for file_name in os.listdir(data_folder):
 if dfs_adc:
     df_adc = pd.concat(dfs_adc, ignore_index=True)
     df_adc.to_csv(output_adc_path, index=False)
-    print(f"[✓] Dataset ADC salvato in {output_adc_path}")
+    print(f"[OK] Dataset ADC salvato in {output_adc_path}")
 else:
     print("[!] Nessun file ADC trovato o valido.")
 
 if dfs_imu:
     df_imu = pd.concat(dfs_imu, ignore_index=True)
     df_imu.to_csv(output_imu_path, index=False)
-    print(f"[✓] Dataset IMU salvato in {output_imu_path}")
+    print(f"[OK] Dataset IMU salvato in {output_imu_path}")
 else:
     print("[!] Nessun file IMU trovato o valido.")

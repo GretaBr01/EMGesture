@@ -102,7 +102,7 @@ df_imu = pd.read_csv(imu_path)
 df_imu["acc_vector"] = np.sqrt(df_imu["acc_x"]**2 + df_imu["acc_y"]**2 + df_imu["acc_z"]**2)
 df_imu["gyr_vector"] = np.sqrt(df_imu["gyr_x"]**2 + df_imu["gyr_y"]**2 + df_imu["gyr_z"]**2)
 
-df_imu_features=df_imu.drop(columns=["timestamp", "pkt_time_ns"])
+df_imu_features=df_imu.drop(columns=["timestamp", "pkt_time_ns", "time_rel"])
 sensors_imu=(df_imu_features.columns.values.tolist())
 sensors_imu.remove("series_id")
 sensors_imu.remove("label")
@@ -111,7 +111,7 @@ df_imu_features = dfFeatures(df_imu_features, sensors_imu)
 
 # === ADC ===
 df_adc = pd.read_csv(adc_path)
-df_adc_features=df_adc.drop(columns=["timestamp", "pkt_time_ns"])
+df_adc_features=df_adc.drop(columns=["timestamp", "pkt_time_ns", "time_rel"])
 sensors_adc=(df_adc_features.columns.values.tolist())
 sensors_adc.remove("series_id")
 sensors_adc.remove("label")

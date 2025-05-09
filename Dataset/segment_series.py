@@ -1,8 +1,9 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import numpy as np
 
-folder_path = ["./data/adc", "./data/imu"]
+folder_path = ["./data/emg", "./data/imu"]
 output_folder = "./data_numbered_series"
 
 
@@ -56,7 +57,7 @@ for folder_name in folder_path:
                 # Nome del file in output
                 output_file_name = file_name[:-4] + "_labeled.csv"
                 output_file_path = os.path.join(output_folder, output_file_name)
-
+                output_file_path = output_file_path.replace("adc", "emg")
                 # Salta se il file esiste già
                 if os.path.exists(output_file_path):
                     print(f"[Già presente] {output_file_name} - ignorato.")
@@ -71,10 +72,12 @@ for folder_name in folder_path:
 
                 # Rimuove i punti isolati: sia prev_diff che next_diff > threshold
                 df = df[~((df['prev_diff'] > th) & (df['next_diff'] > th))].reset_index(drop=True)
-
+                df.loc[0, 'prev_diff'] = 0
                 # Segmentazione
                 df['timestamp_diff'] = df['timestamp'].diff()
                 df['series_id'] = (df['timestamp_diff'] > threshold).cumsum() + current_counter
+                
+                df["time_rel"]=np.cumsum(df["prev_diff"])
 
                 new_max_series_id = df['series_id'].max() + 1
                 if is_adc:
