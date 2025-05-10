@@ -40,13 +40,7 @@ range ADC: [0, 4095]
 I dati adc e imu sono contenuti nella cartella 'data'
 La cartella 'data' ha due sottocartelle, 'adc' e 'imu', che hanno a loro volta sottocartelle nominate come i gestures presi in analisi.
 
-Inserire i file .csv dei dati acquisiti nella sottocartella del gesto acquisito, rinominare i file anteponendo il nome del gesture. 
-
-Per creare il dataset eseguire lo script 'segment_series.py', numererà le serie temporali acquisite e salvate nei file .csv.
-Successivamete eseguire lo script 'create_df_segments.py', genera i file 'adc_dataset.csv' e 'imu_dataset.csv. I file generati raccolgono tutte le serie dei file .csv contenuti nelle cartelle 'data/adc' e 'dat/imu'.
-
-Per creare il dataset delle features possibili eseguire lo script 'create_df_features.py'.
-Genera i file nella cartella 'dataset_features'
+Per creare il dataset eseguire lo script 'MainCreateDataset.py'.
 
 
 
