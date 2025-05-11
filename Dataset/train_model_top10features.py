@@ -10,26 +10,28 @@ import matplotlib.pyplot as plt
 # === Create a directory for the model ===
 os.makedirs("Dataset/models", exist_ok=True)
 
-# === Load the feature dataset ===
+# === Load datasets ===
 df = pd.read_csv("Dataset/dataset/extracted_features.csv")
+importance_df = pd.read_csv("Dataset/dataset/feature_importance.csv")
 
-# === Split features and labels ===
-X = df.drop(columns=["label", "series_id"])
+# === Select top 10 features ===
+top_features = importance_df["feature"].iloc[:3].tolist()
+
+# === Prepare data ===
+X = df[top_features]
 y = df["label"]
 
-# === Train/test split (stratified to preserve class balance) ===
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X, y, test_size=0.2, stratify=y, random_state=42
 )
 
-# === Train RandomForest with class weighting ===
+# === Train model ===
 clf = RandomForestClassifier(class_weight="balanced", random_state=42)
 clf.fit(X_train, y_train)
-
-# === Predict and evaluate ===
 y_pred = clf.predict(X_test)
 
-print("=== Classification Report ===")
+# === Evaluate ===
+print("=== Classification Report (Top 10 Features) ===")
 print(classification_report(y_test, y_pred))
 
 # === Confusion matrix ===
@@ -42,6 +44,6 @@ plt.tight_layout()
 plt.show()
 
 # === Save the model ===
-model_filename = os.path.join("Dataset/models", "random_forest_model.joblib")
+model_filename = os.path.join("Dataset/models", "random_forest_top10features.joblib")
 joblib.dump(clf, model_filename)
 print(f"Model saved to {model_filename}")
