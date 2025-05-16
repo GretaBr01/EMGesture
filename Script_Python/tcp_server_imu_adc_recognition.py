@@ -71,6 +71,8 @@ img_left = os.path.join(img_dir, "left-arrow.jpg")
 img_right= os.path.join(img_dir, "right-arrow.jpg")
 img_stop = os.path.join(img_dir, "stop.jpg")
 
+labels=["turning", "left", "stop"]
+
 # # create csv file
 # os.makedirs(NAME_DIR+"/dati_imu", exist_ok=True)
 # os.makedirs(NAME_DIR+"/dati_adc", exist_ok=True)
@@ -182,6 +184,15 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
                         }
 
                         gesture_class = infer(features_acc, features_gyr, features_emg)
+
+                        match gesture_class:
+                            case "turning":
+                                mostra_immagine(img_right)
+                            case "left":
+                                mostra_immagine(img_left)
+                            case "stop":
+                                mostra_immagine(img_stop)
+                                
 
                         print(f">>> Gesto riconosciuto: {gesture_class}")
                         log_message(log_file, f">>> Gesto riconosciuto: {gesture_class}")
