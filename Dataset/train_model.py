@@ -13,6 +13,9 @@ os.makedirs("Dataset/models", exist_ok=True)
 # === Load the feature dataset ===
 df = pd.read_csv("Dataset/datasetCreate/dataset_features/features_dataset.csv")
 
+# === Filter out the 'notevent' class ===
+df = df[df["label"] != "notevent"]
+
 # === Split features and labels ===
 X = df.drop(columns=["label", "series_id"])
 y = df["label"]
