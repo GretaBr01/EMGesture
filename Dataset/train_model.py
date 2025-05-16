@@ -11,37 +11,58 @@ import matplotlib.pyplot as plt
 os.makedirs("Dataset/models", exist_ok=True)
 
 # === Load the feature dataset ===
-df = pd.read_csv("Dataset/dataset/extracted_features.csv")
+df = pd.read_csv("Dataset/datasetCreate/dataset_features/features_dataset.csv")
 
 # === Split features and labels ===
 X = df.drop(columns=["label", "series_id"])
 y = df["label"]
 
-# === Train/test split (stratified to preserve class balance) ===
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+# === Define a specific feature subsets ===
+feature_sets = {
+    "set1": [
+        "emg0_rms_ac", "emg1_rms_ac", "emg2_rms_ac", "emg3_rms_ac",
+        "acc_x_mean", "acc_y_mean", "acc_z_mean",
+        "gyr_x_mean", "gyr_y_mean", "gyr_z_mean"
+    ],
+    "set2": [
+        "emg0_rms_ac", "emg1_rms_ac",
+        "acc_x_mean", "acc_y_mean", "acc_z_mean",
+        "gyr_x_mean", "gyr_y_mean", "gyr_z_mean"
+    ],
+    "set3": [
+        "emg0_rms_ac", "emg1_rms_ac", "emg2_rms_ac", "emg3_rms_ac",
+        "acc_x_rms_ac", "acc_y_rms_ac", "acc_z_rms_ac",
+        "gyr_x_rms_ac", "gyr_y_rms_ac", "gyr_z_rms_ac"
+    ],
+    "set4": [
+        "emg0_rms_ac", "emg1_rms_ac",
+        "acc_x_rms_ac", "acc_y_rms_ac", "acc_z_rms_ac",
+        "gyr_x_rms_ac", "gyr_y_rms_ac", "gyr_z_rms_ac"
+    ]
+}
 
-# === Train RandomForest with class weighting ===
-clf = RandomForestClassifier(class_weight="balanced", random_state=42)
-clf.fit(X_train, y_train)
+for name, features in feature_sets.items():
+    print(f"\n=== Training model: {name} ===")
 
-# === Predict and evaluate ===
-y_pred = clf.predict(X_test)
+    # Select features and labels
+    X = df[features]
+    y = df["label"]
 
-print("=== Classification Report ===")
-print(classification_report(y_test, y_pred))
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y # stratify=y: keeps the class distribution the same in both train and test sets (important if your dataset is imbalanced)
+    )
 
-# === Confusion matrix ===
-cm = confusion_matrix(y_test, y_pred, labels=clf.classes_)
-sns.heatmap(cm, annot=True, fmt="d", xticklabels=clf.classes_, yticklabels=clf.classes_)
-plt.xlabel("Predicted")
-plt.ylabel("True")
-plt.title("Confusion Matrix")
-plt.tight_layout()
-plt.show()
+    # Train model
+    clf = RandomForestClassifier(class_weight="balanced", random_state=42) # class_weight="balanced": automatically adjusts weights inversely proportional to class frequencies. This helps if your dataset has imbalanced classes.
+    clf.fit(X_train, y_train)
 
-# === Save the model ===
-model_filename = os.path.join("Dataset/models", "random_forest_model.joblib")
-joblib.dump(clf, model_filename)
-print(f"Model saved to {model_filename}")
+    # Evaluate
+    y_pred = clf.predict(X_test)
+    print("=== Classification Report ===")
+    print(classification_report(y_test, y_pred))
+
+    # Save model
+    model_filename = os.path.join("Dataset/models", f"random_forest_model_{name}.joblib")
+    joblib.dump(clf, model_filename)
+    print(f"Model saved to {model_filename}")
