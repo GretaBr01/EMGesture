@@ -6,6 +6,7 @@ from datetime import datetime
 import time
 import subprocess
 from modules_recognition_server.create_features import signal_statistic
+from modules_recognition_server.visualizzaImmagine import mostra_immagine
 import numpy as np
 
 from modules_recognition_server.inference_model import infer
@@ -61,6 +62,14 @@ acc_buffer = []
 gyr_buffer = []
 emg_buffer = []
 
+#/home/raspberrypi/immagini
+base_dir = os.path.abspath(os.getcwd())
+
+img_dir = os.path.join(base_dir, "img")
+
+img_left = os.path.join(img_dir, "left-arrow.jpg")
+img_right= os.path.join(img_dir, "right-arrow.jpg")
+img_stop = os.path.join(img_dir, "stop.jpg")
 
 # # create csv file
 # os.makedirs(NAME_DIR+"/dati_imu", exist_ok=True)
@@ -118,8 +127,6 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
                         buffer = buffer[TOTAL_PACKET_SIZE:]  # buffer rimanente
 
                         bit_string = ''.join(f"{byte:08b}" for byte in packet_data)
-                        pkt_file.write(bit_string + '\n')
-                        pkt_file.flush()
 
                         time_pkt = get_timestamp()
 
