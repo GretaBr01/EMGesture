@@ -17,6 +17,7 @@
         "format": "cpp",
         "initializer_list": "cpp",
         "mutex": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "optional": "cpp"
     }
 }

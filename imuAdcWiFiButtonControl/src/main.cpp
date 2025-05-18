@@ -26,20 +26,20 @@ static WiFiClient client;
 
 /* ADC */
 #define N_ADC_CHANNELS_ENABLE 4
-#define N_SAMPLES_ADC_QUEUE 3016  //52 pacchetti
+#define N_SAMPLES_ADC_QUEUE 3016  //size of 52 packet
 #define N_SAMPLES_ADC_RING N_SAMPLES_ADC_QUEUE 
 #define N_SAMPLES_ADC_PACKET 58
 #define THRESHOLD_ADC_QUEUE (N_SAMPLES_ADC_QUEUE * QUEUE_THRESHOLD_PCT /100)
 static uint8_t current_adc_channel = 0;
 
 typedef struct {
-  uint32_t timestamp; // micros()
+  uint32_t timestamp;
   uint16_t adc[N_ADC_CHANNELS_ENABLE];
 } adc_sample;
 
 /* IMU */
-#define SR 208.0f // frequency acc, gyr -- maggiore di 417Hz un timestamp ogni tot campioni acc,gyr
-#define N_SAMPLES_IMU_QUEUE 624 //52 pacchetti
+#define SR 208.0f // frequency acc, gyr
+#define N_SAMPLES_IMU_QUEUE 624 //52 packet
 #define N_SAMPLES_IMU_RING N_SAMPLES_IMU_QUEUE 
 #define N_SAMPLES_IMU_PACKET 12
 #define THRESHOLD_IMU_QUEUE (N_SAMPLES_IMU_QUEUE * QUEUE_THRESHOLD_PCT /100)
@@ -59,8 +59,8 @@ typedef struct{
 
 /* creazione pacchetto */
 typedef struct {
-  uint32_t timestamp; // micros()
-  uint8_t adc[6]; // 12 bit per sample adc
+  uint32_t timestamp;
+  uint8_t adc[6]; // sample adc 12 bit
 } adc_sample_packet;
 
 typedef struct {
@@ -68,11 +68,11 @@ typedef struct {
   adc_sample_packet adc_block[N_SAMPLES_ADC_PACKET];
 } packet;
 
-/* | NUMERO PACCHETTO | PAYLOAD | NUMERO PACCHETTO NEGATO - 4 byte | 
+/* | PACKAGE NUMBER | PAYLOAD | ~PACKAGE NUMBER - 4 byte | 
 *
-*  sizeof(NUMERO PACCHETTO) = 4 byte            
+*  sizeof(PACKAGE NUMBER) = 4 byte            
 *  sizeof(PAYLOAD) = [(4+6+6)*N_SAMPLES_IMU_PACKET + (4+6)*N_SAMPLES_ADC_PACKET] byte
-*  sizeof(NUMERO PACCHETTO NEGATO) = 4 byte
+*  sizeof(~PACKAGE NUMBER) = 4 byte
 */
 static uint32_t num_pkt_inviati=0;
 static uint32_t num_pkt_negato=0;
@@ -100,10 +100,10 @@ static adc_sample adc_ring_core1[ADC_RING_CORE1_SIZE];
 static uint8_t adc_ring_core1_head = 0;
 static uint8_t adc_ring_core1_tail = 0;
 
-const int RATIO_FREQ= round(1000/208); //rapporto frequenza ADC e IMU
+const int RATIO_FREQ= round(1000/208); //ADC and IMU frequency ratio
 
 
-/* MACCHINA A STATI*/
+/*STATE MACHINE CORE 0*/
 typedef enum {
   STATE_CORE0_INIT = 0,
   STATE_CORE0_GET_IMU,
@@ -114,6 +114,7 @@ typedef enum {
   STATE_CORE0_IDLE
 } core0_state_t;
 
+/*STATE MACHINE CORE 0*/
 typedef enum {
   STATE_CORE1_INIT = 0,
   STATE_CORE1_READING_IMU,
@@ -139,14 +140,14 @@ static int cont = 0;
 #define BUTTON_GPIO D8
 static bool btn_interrupt=false;
 
-static uint32_t btn_time = 0;
+static unsigned long  btn_time = 0;
 #define DEBOUNCE_DELAY_MS 800
 bool btn_enabled = true;
 
 void button_callback(uint gpio, uint32_t events) {
   if (gpio == BUTTON_GPIO && events & GPIO_IRQ_EDGE_FALL && btn_enabled) {
     btn_enabled = false;
-    btn_time = to_ms_since_boot(get_absolute_time());
+    btn_time=millis();
     btn_interrupt = true;
   }
 }
@@ -184,7 +185,6 @@ void setup_button_interrupt() {
 
   gpio_set_irq_enabled_with_callback(BUTTON_GPIO, GPIO_IRQ_EDGE_FALL, true, &button_callback);
 }
-
 
 void core1_setup();
 void core1_loop();
@@ -244,7 +244,7 @@ void setup() {
 }
 
 void loop(){
-  uint32_t now = to_ms_since_boot(get_absolute_time());
+  unsigned long  now = millis();
   if (!btn_enabled && (now - btn_time > DEBOUNCE_DELAY_MS)) {
     btn_enabled = true;
   }
@@ -393,7 +393,7 @@ void loop(){
         }else{
           client.stop();
           gpio_put(LED_PIN, LOW);
-          delay(50);
+          delay(100);
           gpio_put(LED_PIN, HIGH);
           client.connect(server_ip, port);
         }  
@@ -441,10 +441,8 @@ void loop(){
 
 /*******************************************************************
  *  CORE 1
- * 
- *  - sincronizzazione clock con NTP
- *  - acquisizione dati da IMU e ADC (4 canali)
- *  - invio dati al Core1 tramite queue
+ *  - data acquisition from IMU and ADC (4 channels)
+ *  - data sending to Core0 via queue
  * 
  *******************************************************************/
 
@@ -453,11 +451,11 @@ void loop(){
 static adc_sample sample_adc; 
 void adc_interrupt_handler() { 
   if (current_adc_channel == 0) {
-    sample_adc.timestamp = micros();  // Timestamp solo al primo campione
+    sample_adc.timestamp = micros();
   }
   sample_adc.adc[current_adc_channel] = adc_fifo_get();
 
-  if (current_adc_channel == N_ADC_CHANNELS_ENABLE-1) {  // tutti i canali sono stati letti 
+  if (current_adc_channel == N_ADC_CHANNELS_ENABLE-1) { 
     uint8_t next_head = (adc_ring_core1_head + 1) % ADC_RING_CORE1_SIZE;
 
     adc_ring_core1[adc_ring_core1_head] = sample_adc;
@@ -475,7 +473,6 @@ void adc_interrupt_handler() {
 
 static bool fifo_multicore_interrupt = false;
 void core1_sio_irq() {
-  // Just record the latest entry
   while (multicore_fifo_rvalid()){
     state_core1 =(core1_state_t) multicore_fifo_pop_blocking(); // msg stop or msg init
     fifo_multicore_interrupt=true;
@@ -510,8 +507,8 @@ void core1_setup() {
     delay(50);
   } while (lsm6dsoxSensor.Enable_X() != LSM6DSOX_OK || lsm6dsoxSensor.Enable_G() != LSM6DSOX_OK);
 
-  lsm6dsoxSensor.Set_X_FS(4);    // Accelerometro: ±4G
-  lsm6dsoxSensor.Set_G_FS(2000); // Giroscopio: ±2000 dps
+  lsm6dsoxSensor.Set_X_FS(4);    // Acc: ±4G
+  lsm6dsoxSensor.Set_G_FS(2000); // Gyro: ±2000 dps
 
   lsm6dsoxSensor.Set_X_ODR(SR); 
   lsm6dsoxSensor.Set_G_ODR(SR);
@@ -531,7 +528,7 @@ void core1_setup() {
   adc_gpio_init(28); // pin A2
   adc_gpio_init(29); // pin A3
 
-  adc_set_clkdiv(48000.0f/N_ADC_CHANNELS_ENABLE); //frequenza di 1kHz per canale
+  adc_set_clkdiv(48000.0f/N_ADC_CHANNELS_ENABLE); //frequency channel 1kHz, 4 channels
   adc_fifo_setup(true, false, 1, false, false);
   adc_irq_set_enabled(true);
 
@@ -547,7 +544,7 @@ void core1_loop() {
   case STATE_CORE1_INIT:
     adc_ring_core1_head=0;
     adc_ring_core1_tail=0;
-    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE); // Abilita modalità continua FIFO del IMU (salva campioni Timestamp, Gyr, Acc)
+    lsm6dsoxSensor.Set_FIFO_Mode(LSM6DSOX_STREAM_MODE);
     adc_run(true);
 
     changeStateCore1(STATE_CORE1_READING_IMU);
