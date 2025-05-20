@@ -1,19 +1,29 @@
-# EMGesture - International IMS Student Contest
-## AcquisizioneDati_queue_wifi
-Firmware Arduino rp2040 connect per campionare segnali IMU 204Hz (accelerometro e giroscopio), 4 canali ADC 1kHz.
-Connessione TCP via WiFi, invia pacchetti composti da 12 blocchi |timestamp|gyr|acc| e 58 blocchi |timestamp|adc0|adc1|adc2|adc3|.
-timestamp 4B,
-gyr 6B,
-acc 6B,
-adc 12 bit
+# EMGesture
 
-Per la programmazione utilizzato picoSDK earlephilhower
+## electrode position
+![PCB](images/PCB.png)
+![Elettrodi](images/electrodes_position.png)
 
+## Gesture: 
+- Stopping
+- Right turn
+- Left turn
 
-# TO DO LIST
+![Gesture](images/gesture.png)
 
-## Creazione NN
-- test di esecuzione di una NN su Raspberry per avere un'idea di quanti neuroni e livelli possiamo implementare senza sovraccaricare al massimo Raspberry
-- analisi dati raccolti (correlazione, feature significative...)
-- modello NN più adeguato
-- addestramento e validazione del modello
+reference: https://channel.endu.net/ciclismo/il-codice-dei-ciclisti/
+
+## Experimental Setup
+![Experimental Setup](images/ExperimentalSetup.png)
+
+## Sensor:
+- IMU ST Microelectronics LSM6DSOXTR (Acc, Gyro): 16 bit @ 208 Sa/s
+- Raspberry Pi RP2040 - ADC: 4 channel, 12 bit @ 1kSa/s
+
+range Acc: [-4, +4]g +/-0.122 mg
+sensitivity: LSM6DSOX_ACC_SENSITIVITY_FS_4G   0.122f
+
+range Gyro: [-2000, +2000]dps +/-70mdps
+sensitivity: LSM6DSOX_GYRO_SENSITIVITY_FS_2000DPS  70.000f
+
+range ADC: [0, 4095]
