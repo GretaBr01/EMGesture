@@ -5,9 +5,9 @@
 ![Elettrodi](images/electrodes_position.png)
 
 ## Gesture: 
+- Left turn
 - Stopping
 - Right turn
-- Left turn
 
 ![Gesture](images/gesture.png)
 
